@@ -1,0 +1,104 @@
+.dash {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 22px 22px;
+}
+
+.soc {
+  height: 44px;
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 500;
+  /* Tabular figures match the design and stop the width jumping as SOC changes. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+}
+
+.bar {
+  margin-top: 19px;
+  height: 56px;
+  border-radius: 10px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--green);
+}
+
+/* Animate only later updates, not the first fill. */
+.ready .bar-fill {
+  transition: width 0.6s ease;
+}
+
+.bar-meta {
+  margin-top: 15px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 19px;
+  line-height: 1;
+  height: 19px;
+}
+
+.status[data-flow="discharging"] {
+  color: var(--orange);
+}
+
+.status[data-flow="charging"] {
+  color: var(--green);
+}
+
+.status[data-flow="idle"],
+.status[data-flow="none"] {
+  color: var(--muted);
+}
+
+.status[data-flow="offline"] {
+  color: var(--red);
+}
+
+.stale .soc,
+.stale .card-value {
+  color: var(--muted);
+}
+
+.stale .bar-fill {
+  opacity: 0.4;
+}
+
+.cards {
+  margin-top: 51px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px 22px;
+}
+
+.card {
+  height: 129px;
+  padding: 29px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 17px;
+  min-width: 0;
+}
+
+.card-label {
+  font-size: 21px;
+  line-height: 1;
+}
+
+.card-value {
+  font-size: 34px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.open-settings {
+  margin-top: auto;
+  height: 55px;
+}

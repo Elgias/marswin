@@ -1,0 +1,174 @@
+@import "@fontsource/montserrat/500.css";
+@import "@fontsource/montserrat/600.css";
+
+:root {
+  --bg: #09090b;
+  --surface: #111114;
+  --field: #000000;
+  --border: #19191f;
+  --line: #17171d;
+  --text: #ffffff;
+  --muted: #7b7b8f;
+  --green: #3cae63;
+  --orange: #daa520;
+  --red: #e5484d;
+  --radius: 12px;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Montserrat", "Segoe UI", sans-serif;
+  font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* The window can be smaller than the design on small screens; JS sets --zoom. */
+.frame {
+  zoom: var(--zoom, 1);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh / var(--zoom, 1));
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+  border: 0;
+  outline: 0;
+  background: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ------------------------------------------------------------ title bar */
+
+.titlebar {
+  flex: none;
+  height: 75px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px 0 23px;
+  border-bottom: 1px solid var(--line);
+}
+
+.titlebar h1 {
+  flex: 1;
+  font-size: 19px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+  pointer-events: none;
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text);
+}
+
+.icon-btn:hover {
+  background: var(--surface);
+}
+
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  fill: none;
+}
+
+/* ------------------------------------------------------------ shared controls */
+
+.surface {
+  background: var(--surface);
+  border-radius: var(--radius);
+}
+
+.btn {
+  height: 54px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.btn:not(:disabled):hover {
+  background: #16161a;
+}
+
+.field {
+  height: 52px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--field);
+  padding: 0 23px;
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.field::placeholder {
+  color: var(--muted);
+}
+
+.field:focus {
+  border-color: #2c2c35;
+}
+
+.field.invalid {
+  border-color: var(--red);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: 80%;
+  padding: 12px 20px;
+  border-radius: 10px;
+  background: #1b1b21;
+  border: 1px solid var(--border);
+  font-size: 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.toast.show {
+  opacity: 1;
+}
+
+.toast.error {
+  color: #ff8a8e;
+}

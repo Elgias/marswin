@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MarsWin</title>
+  </head>
+  <body>
+    <div class="frame">
+      <header class="titlebar" data-tauri-drag-region>
+        <h1 data-i18n="settings"></h1>
+        <button class="icon-btn" id="close" data-i18n-title="close">
+          <svg viewBox="0 0 16 16"><path d="M2 2l12 12M14 2L2 14" /></svg>
+        </button>
+      </header>
+
+      <main class="settings">
+        <section class="col">
+          <h2 class="muted" data-i18n="general"></h2>
+          <div class="rows">
+            <div class="row"><span data-i18n="language"></span><div id="lang"></div></div>
+            <div class="row"><span data-i18n="refresh"></span><div id="refresh"></div></div>
+            <div class="row"><span data-i18n="modeCheck"></span><div id="mode-check"></div></div>
+            <div class="row"><span data-i18n="timeout"></span><div id="timeout"></div></div>
+          </div>
+
+          <h2 class="muted gap-section" data-i18n="device"></h2>
+          <form class="row charge-row" id="charge-form">
+            <div class="charge-text">
+              <span data-i18n="charge"></span>
+              <span class="muted range" id="charge-range"></span>
+            </div>
+            <div class="charge-controls">
+              <input class="field charge-input" id="charge" inputmode="numeric" maxlength="3" autocomplete="off" />
+              <button class="square-btn" id="charge-apply" type="submit" data-i18n-title="chargeApply">
+                <svg viewBox="0 0 18 14"><path d="M1.5 7.5l5 5L16.5 1.5" /></svg>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section class="col right">
+          <h2 class="muted head-with-action">
+            <span data-i18n="pickDevice"></span>
+            <button class="rescan" id="rescan" type="button" data-i18n-title="rescan">
+              <svg viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2v3.5H10" /></svg>
+            </button>
+          </h2>
+          <div class="devices" id="devices"></div>
+
+          <h2 class="muted gap-section" data-i18n="manualIp"></h2>
+          <form class="manual" id="manual-form">
+            <div class="manual-inputs">
+              <input class="field" id="ip" placeholder="192.168.1.xxx" autocomplete="off" spellcheck="false" />
+              <input class="field port" id="port" value="30000" inputmode="numeric" maxlength="5" autocomplete="off" />
+            </div>
+            <button class="btn" id="connect" type="submit" data-i18n="connect"></button>
+          </form>
+
+          <h2 class="muted gap-section" data-i18n="connection"></h2>
+          <dl class="conn surface">
+            <div><dt class="muted" data-i18n="network"></dt><dd id="c-ssid">—</dd></div>
+            <div><dt class="muted" data-i18n="signal"></dt><dd id="c-rssi">—</dd></div>
+            <div><dt class="muted" data-i18n="ip"></dt><dd id="c-ip">—</dd></div>
+            <div><dt class="muted" data-i18n="device"></dt><dd id="c-device">—</dd></div>
+          </dl>
+        </section>
+
+        <footer class="version muted" id="version"></footer>
+      </main>
+    </div>
+    <script type="module" src="/src/settings.ts"></script>
+  </body>
+</html>

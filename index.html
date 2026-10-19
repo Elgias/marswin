@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MarsWin</title>
+  </head>
+  <body>
+    <div class="frame">
+      <header class="titlebar" data-tauri-drag-region>
+        <h1>MarsWin</h1>
+        <button class="icon-btn" id="minimize" data-i18n-title="minimize">
+          <svg viewBox="0 0 16 16"><path d="M1.5 8h13" /></svg>
+        </button>
+        <button class="icon-btn" id="close" data-i18n-title="close">
+          <svg viewBox="0 0 16 16"><path d="M2 2l12 12M14 2L2 14" /></svg>
+        </button>
+      </header>
+
+      <main class="dash">
+        <div class="soc" id="soc">—</div>
+        <div class="bar"><div class="bar-fill" id="bar"></div></div>
+        <div class="bar-meta">
+          <span class="muted" id="energy">— / — kWh</span>
+          <span class="status" id="status"></span>
+        </div>
+
+        <div class="cards">
+          <div class="card surface">
+            <span class="card-label muted" data-i18n="input"></span>
+            <span class="card-value" id="input">—</span>
+          </div>
+          <div class="card surface">
+            <span class="card-label muted" data-i18n="output"></span>
+            <span class="card-value" id="output">—</span>
+          </div>
+          <div class="card surface">
+            <span class="card-label muted" data-i18n="temperature"></span>
+            <span class="card-value" id="temp">—</span>
+          </div>
+          <div class="card surface">
+            <span class="card-label muted" data-i18n="mode"></span>
+            <span class="card-value" id="mode">—</span>
+          </div>
+        </div>
+
+        <button class="btn open-settings" id="open-settings" data-i18n="settings"></button>
+      </main>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

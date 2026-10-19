@@ -1,0 +1,327 @@
+.settings {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 45px;
+  padding: 30px 23px 0;
+}
+
+.col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.col.right {
+  overflow-y: auto;
+  padding-bottom: 70px;
+  scrollbar-width: none;
+}
+
+h2 {
+  font-size: 21px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.gap-section {
+  margin-top: 53px;
+}
+
+.head-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rescan {
+  width: 28px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border-radius: 6px;
+}
+
+.rescan:hover {
+  color: var(--text);
+}
+
+.rescan svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rescan.spinning svg {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------ left column */
+
+.rows {
+  margin-top: 31px;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.select {
+  position: relative;
+}
+
+.select-button {
+  height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 21px;
+  padding: 0 23px 0 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 19px;
+  font-weight: 500;
+}
+
+.select-button:hover,
+.select.open .select-button {
+  background: #16161a;
+}
+
+.caret {
+  width: 10px;
+  height: 6px;
+  fill: currentColor;
+  transition: transform 0.15s;
+}
+
+.select.open .caret {
+  transform: rotate(180deg);
+}
+
+.select-list {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 100%;
+  list-style: none;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
+}
+
+.select.open .select-list {
+  display: block;
+}
+
+.select-list li {
+  padding: 11px 16px;
+  border-radius: 8px;
+  font-size: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.select-list li:hover {
+  background: #1b1b21;
+}
+
+.select-list li.selected {
+  color: var(--green);
+}
+
+.charge-row {
+  margin-top: 34px;
+}
+
+.charge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.range {
+  font-size: 19px;
+}
+
+.charge-controls {
+  display: flex;
+  gap: 12px;
+}
+
+.charge-input {
+  width: 87px;
+  padding: 0;
+  text-align: center;
+}
+
+.square-btn {
+  width: 53px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.square-btn:not(:disabled):hover {
+  background: #16161a;
+}
+
+.square-btn svg {
+  width: 18px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ------------------------------------------------------------ right column */
+
+.devices {
+  margin-top: 31px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.device {
+  flex: none;
+  height: 86px;
+  padding: 16px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.device.selected {
+  border-color: var(--border);
+}
+
+.device:not(.selected) .device-name {
+  color: #c9c9d3;
+}
+
+.device:hover {
+  background: #16161a;
+}
+
+.device-name {
+  font-size: 20px;
+  line-height: 20px;
+}
+
+.device-meta {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  font-size: 20px;
+  line-height: 18px;
+}
+
+.devices .note {
+  min-height: 86px;
+  padding: 18px 24px;
+  display: flex;
+  align-items: center;
+  font-size: 17px;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.manual {
+  margin-top: 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manual-inputs {
+  display: flex;
+  gap: 12px;
+}
+
+.manual-inputs .field {
+  flex: 1;
+  min-width: 0;
+}
+
+.manual-inputs .port {
+  flex: none;
+  width: 140px;
+}
+
+.conn {
+  margin-top: 29px;
+  flex: none;
+  padding: 30px 23px 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  font-size: 21px;
+  line-height: 20px;
+}
+
+.conn div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Digit strings (IP, port, version) are set wider in the design. */
+.device-meta,
+.conn dd,
+.version {
+  letter-spacing: 0.7px;
+}
+
+.conn dd {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  text-align: center;
+  font-size: 19px;
+  line-height: 17px;
+  pointer-events: none;
+}
