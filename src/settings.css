@@ -311,6 +311,32 @@ h2 {
   text-overflow: ellipsis;
 }
 
+.update-link {
+  font-size: inherit;
+  letter-spacing: inherit;
+  color: var(--muted);
+  pointer-events: auto;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  transition:
+    color 0.18s,
+    text-decoration-color 0.18s;
+}
+
+.update-link:not(:disabled):hover {
+  color: var(--text);
+  text-decoration-color: currentColor;
+}
+
+.update-link.found {
+  color: var(--green);
+}
+
+.update-link:disabled {
+  opacity: 1;
+}
+
 .version {
   position: absolute;
   left: 0;

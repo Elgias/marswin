@@ -40,7 +40,25 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "nsis": { "languages": ["Ukrainian", "English"], "displayLanguageSelector": false }
+      "nsis": {
+        "languages": [
+          "Ukrainian",
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDc1QjQxRDVFMDgwQ0UwOUYKUldTZjRBd0lYaDIwZFZ2QUtRampiMmdKVjdyZ21ha0pIV3hRNnVhN1BvMzM5MzRYa0NhWm1mTHMK",
+      "endpoints": [
+        "https://github.com/Elgias/marswin/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

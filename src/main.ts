@@ -1,7 +1,7 @@
 import "./styles.css";
 import "./main.css";
 import "./motion.css";
-import { api, fitZoom, onFade, onSettings, onSnapshot, toast, win, type Settings, type Snapshot } from "./api";
+import { api, fitZoom, onFade, onSettings, onSnapshot, onUpdate, toast, win, type Settings, type Snapshot } from "./api";
 import { errorText, setLang, t, translatePage } from "./i18n";
 import { enter, leave, roll, seed, swap } from "./motion";
 import { PaceRing } from "./pace";
@@ -59,6 +59,10 @@ onSnapshot((s) => {
   render();
 });
 onSettings(applySettings);
+// A dot on Settings tells about a new version; the link to install it is there.
+const markUpdate = (found: boolean) => $("open-settings").classList.toggle("has-update", found);
+onUpdate((u) => markUpdate(!!u));
+void api.getUpdate().then((u) => markUpdate(!!u));
 
 const [first, firstSnap] = await Promise.all([api.getSettings(), api.getSnapshot()]);
 snapshot = firstSnap;

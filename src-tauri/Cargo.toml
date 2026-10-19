@@ -20,6 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["net", "time", "sync", "macros"] }
 if-addrs = "0.13"
+tauri-plugin-updater = "2"
 
 [profile.release]
 opt-level = "s"

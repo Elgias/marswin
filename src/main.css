@@ -94,6 +94,21 @@
 }
 
 .open-settings {
+  position: relative;
   margin-top: auto;
   height: 55px;
+}
+
+/* A new version is out (details in Settings). */
+.open-settings.has-update::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 22px;
+  width: 9px;
+  height: 9px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: rise 0.4s var(--ease-out);
 }

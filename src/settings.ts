@@ -6,6 +6,8 @@ import {
   fitZoom,
   onAutostart,
   onFade,
+  onUpdate,
+  onUpdateFailed,
   onSettings,
   onSnapshot,
   toast,
@@ -14,6 +16,7 @@ import {
   type Lang,
   type Settings,
   type Snapshot,
+  type UpdateInfo,
 } from "./api";
 import { errorText, seconds, setLang, t, translatePage } from "./i18n";
 import { enter, leave, swap } from "./motion";
@@ -31,6 +34,8 @@ let snapshot: Snapshot | null = null;
 let found: Found[] = [];
 let scanning = false;
 let shownList = "";
+let update: UpdateInfo | null = null;
+let updateBusy: "checking" | "installing" | null = null;
 
 const save = (patch: Parameters<typeof api.saveSettings>[0]) =>
   api.saveSettings(patch).then(applySettings, (e) => toast(t("failed", { e: errorText(e) }), true));
@@ -123,6 +128,38 @@ function applySettings(next: Settings): void {
   renderSelects();
   renderDevices();
   renderConnection();
+  renderUpdate();
+}
+
+/** Footer link: "Check for updates", or "Update to 1.4.0" once one is found. */
+function renderUpdate(): void {
+  const link = $<HTMLButtonElement>("update");
+  link.disabled = updateBusy !== null;
+  link.classList.toggle("found", !!update && !updateBusy);
+  link.textContent = updateBusy
+    ? t(updateBusy)
+    : update
+      ? t(update.canInstall ? "installUpdate" : "downloadUpdate", { v: update.version })
+      : t("checkUpdate");
+}
+
+async function onUpdateClick(): Promise<void> {
+  updateBusy = update?.canInstall ? "installing" : update ? null : "checking";
+  renderUpdate();
+  try {
+    if (update) {
+      // The installer closes MarsWin and starts the new version.
+      await api.installUpdate();
+    } else {
+      update = await api.checkUpdate();
+      if (!update) toast(t("upToDate"));
+    }
+  } catch (e) {
+    toast(t("failed", { e: errorText(e) }), true);
+  } finally {
+    updateBusy = null;
+    renderUpdate();
+  }
 }
 
 async function scan(): Promise<void> {
@@ -174,6 +211,12 @@ autostart.addEventListener("change", async () => {
 });
 onAutostart((on) => (autostart.checked = on));
 $("rescan").addEventListener("click", () => void scan());
+$("update").addEventListener("click", () => void onUpdateClick());
+onUpdate((u) => {
+  update = u;
+  renderUpdate();
+});
+onUpdateFailed((e) => toast(t("failed", { e: errorText(e) }), true));
 
 $("manual-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -201,12 +244,14 @@ onSnapshot((s) => {
   renderConnection();
 });
 
-const [first, firstSnap, version, autostartOn] = await Promise.all([
+const [first, firstSnap, version, autostartOn, firstUpdate] = await Promise.all([
   api.getSettings(),
   api.getSnapshot(),
   api.appVersion(),
   api.getAutostart(),
+  api.getUpdate(),
 ]);
+update = firstUpdate;
 autostart.checked = autostartOn;
 snapshot = firstSnap;
 $("version").textContent = `v${version}`;

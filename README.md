@@ -24,6 +24,10 @@ A small Windows app that monitors a Marstek battery (Venus C/D/E, Venus E mini) 
 - × on the main window hides it to the tray.
 - Starts with Windows (hidden in the tray); switched on at first run. Toggle it in Settings or
   in the tray menu; both stay in step.
+- Updates itself from GitHub Releases: checks 15 s after start and every 6 hours. A found version
+  shows as a dot on the Settings button, "Update to X" in the Settings footer and at the top of
+  the tray menu. The installed copy downloads it, checks the signature, installs and restarts.
+  The portable exe only opens the release page.
 - Exchange log of raw requests and replies: `%APPDATA%\com.marswin.app\marswin.log`.
 - Ukrainian and English.
 
@@ -42,9 +46,33 @@ Requirements: Node 20+, Rust (stable), WebView2 (included in Windows 11).
 npm install
 npm run tauri dev     # app with a real backend
 npm run dev           # UI only, in a browser, with mock data (http://localhost:1420)
-npm run tauri build   # installer: src-tauri/target/release/bundle/nsis/
 cd src-tauri && cargo test
 ```
+
+## Releasing
+
+A release must be built with `scripts/release.ps1`. A plain `npm run tauri build` fails, because
+the build also signs the update and needs the key.
+
+1. Set the new version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`.
+2. Write the release notes (English) to a file, for example `notes.md`.
+3. Run `.\scripts\release.ps1 -Notes notes.md`. It builds into `release\`:
+   `MarsWin_X.Y.Z_x64-setup.exe`, `MarsWin_X.Y.Z_x64_portable.exe` and `latest.json`.
+4. Create the release `vX.Y.Z` on GitHub and attach **all three files**. Or add `-Publish` to step 3
+   to do this with `gh`.
+
+Installed copies read `latest.json` from the newest release, so a release without it updates
+nobody. Do not mark a release as pre-release: `releases/latest` skips pre-releases.
+
+**Updater key.** The private key is `%USERPROFILE%\.tauri\marswin.key` (no password); the public
+key is in `tauri.conf.json`. Keep a backup of the private key outside this PC. If it is lost,
+installed copies cannot update any more: users must install a build with a new key by hand.
+
+**Testing an update without GitHub.** Build two versions with
+`--config '{"version":"X","plugins":{"updater":{"dangerousInsecureTransportProtocol":true}}}'`
+(and the key in `TAURI_SIGNING_PRIVATE_KEY`). Install the older one, serve the newer installer
+and a `latest.json` over local HTTP, and start MarsWin with `MARSWIN_UPDATE_URL` set to that
+`latest.json`.
 
 ## Layout
 
@@ -59,6 +87,8 @@ cd src-tauri && cargo test
 | `src/view.ts` | Formatting and status shared by the main window and the widget |
 | `src/motion.ts`, `src/motion.css` | Rolling numbers, text swaps, window entrance and exit |
 | `src/pace.ts` | Countdown ring to the next poll |
+| `src-tauri/src/update.rs` | Self-update from GitHub Releases |
+| `scripts/release.ps1` | Signed release build: installer, portable exe, `latest.json` |
 
 ## Data mapping
 

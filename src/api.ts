@@ -43,6 +43,12 @@ export interface Found {
   ver: number | null;
 }
 
+/** A newer release on GitHub (update.rs). The portable exe cannot install it, only open the page. */
+export interface UpdateInfo {
+  version: string;
+  canInstall: boolean;
+}
+
 /** Poller state for the countdown ring (lib.rs, Pace). */
 export type Pace = { state: "idle" } | { state: "busy" } | { state: "wait"; leftMs: number; totalMs: number };
 
@@ -104,6 +110,10 @@ async function mock<T>(cmd: string, args: Record<string, unknown> = {}): Promise
     case "set_autostart":
       mockAutostart = args.enabled as boolean;
       return mockAutostart as T;
+    case "get_update":
+      return null as T;
+    case "check_update":
+      return { version: "1.4.0", canInstall: true } as T;
     case "get_pace":
       return { state: "wait", leftMs: 20000, totalMs: 30000 } as T;
     case "app_version":
@@ -130,6 +140,9 @@ export const api = {
   appVersion: () => call<string>("app_version"),
   getPace: () => call<Pace>("get_pace"),
   refreshNow: () => call<void>("refresh_now"),
+  getUpdate: () => call<UpdateInfo | null>("get_update"),
+  checkUpdate: () => call<UpdateInfo | null>("check_update"),
+  installUpdate: () => call<void>("install_update"),
 };
 
 export function onSnapshot(cb: (s: Snapshot) => void): void {
@@ -139,6 +152,14 @@ export function onSnapshot(cb: (s: Snapshot) => void): void {
 /** Autostart was switched elsewhere (tray menu or another window). */
 export function onAutostart(cb: (enabled: boolean) => void): void {
   if (inTauri) void listen<boolean>("autostart", (e) => cb(e.payload));
+}
+
+export function onUpdate(cb: (u: UpdateInfo | null) => void): void {
+  if (inTauri) void listen<UpdateInfo | null>("update", (e) => cb(e.payload));
+}
+
+export function onUpdateFailed(cb: (error: string) => void): void {
+  if (inTauri) void listen<string>("update-failed", (e) => cb(e.payload));
 }
 
 export function onPace(cb: (p: Pace) => void): void {

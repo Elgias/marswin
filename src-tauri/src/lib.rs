@@ -2,6 +2,7 @@ mod fit;
 mod marstek;
 mod settings;
 mod snapshot;
+mod update;
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -112,6 +113,8 @@ fn tr(lang: &str, key: &str) -> &'static str {
         "idle" => if en { "Idle" } else { "Очікування" },
         "offline" => if en { "No connection" } else { "Немає зв'язку" },
         "nodevice" => if en { "No device selected" } else { "Пристрій не вибрано" },
+        "install" => if en { "Update to" } else { "Оновити до" },
+        "download" => if en { "Download" } else { "Завантажити" },
         _ => "",
     }
 }
@@ -137,7 +140,7 @@ fn tooltip(lang: &str, snap: &Snapshot, has_device: bool) -> String {
 
 fn build_menu(app: &AppHandle, lang: &str) -> tauri::Result<Menu<tauri::Wry>> {
     let autostart = app.autolaunch().is_enabled().unwrap_or(false);
-    Menu::with_items(
+    let menu = Menu::with_items(
         app,
         &[
             &MenuItem::with_id(app, "show", tr(lang, "show"), true, None::<&str>)?,
@@ -146,7 +149,23 @@ fn build_menu(app: &AppHandle, lang: &str) -> tauri::Result<Menu<tauri::Wry>> {
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", tr(lang, "quit"), true, None::<&str>)?,
         ],
-    )
+    )?;
+    // A found update goes on top: "Update to 1.4.0" (installed) or "Download 1.4.0" (portable).
+    if let Some(u) = update::found() {
+        let verb = tr(lang, if u.can_install { "install" } else { "download" });
+        menu.insert(&MenuItem::with_id(app, "update", format!("{verb} {}", u.version), true, None::<&str>)?, 0)?;
+        menu.insert(&PredefinedMenuItem::separator(app)?, 1)?;
+    }
+    Ok(menu)
+}
+
+fn start_update(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = update::install(&app).await {
+            let _ = app.emit("update-failed", e);
+        }
+    });
 }
 
 fn refresh_tray(app: &AppHandle) {
@@ -533,6 +552,21 @@ fn hide_window(window: WebviewWindow) {
 }
 
 #[tauri::command]
+fn get_update() -> Option<update::UpdateInfo> {
+    update::found()
+}
+
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<update::UpdateInfo>, String> {
+    update::check(&app, rebuild_tray_menu).await
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    update::install(&app).await
+}
+
+#[tauri::command]
 fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
@@ -549,6 +583,7 @@ pub fn run() {
                 show_main(app);
             }
         }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
         .setup(|app| {
             let dir = app.path().app_config_dir()?;
@@ -596,6 +631,7 @@ pub fn run() {
                         let on = app.autolaunch().is_enabled().unwrap_or(false);
                         let _ = apply_autostart(app, !on);
                     }
+                    "update" => start_update(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -610,6 +646,7 @@ pub fn run() {
                 main.set_focus()?;
             }
 
+            update::spawn_checks(handle.clone(), rebuild_tray_menu);
             tauri::async_runtime::spawn(poller(handle));
             Ok(())
         })
@@ -638,6 +675,9 @@ pub fn run() {
             hide_window,
             get_pace,
             refresh_now,
+            get_update,
+            check_update,
+            install_update,
             open_settings,
             open_main,
             get_autostart,
