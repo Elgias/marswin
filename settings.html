@@ -22,21 +22,11 @@
             <div class="row"><span data-i18n="refresh"></span><div id="refresh"></div></div>
             <div class="row"><span data-i18n="modeCheck"></span><div id="mode-check"></div></div>
             <div class="row"><span data-i18n="timeout"></span><div id="timeout"></div></div>
+            <label class="row switch-row">
+              <span data-i18n="autostart"></span>
+              <input type="checkbox" class="switch" id="autostart" role="switch" />
+            </label>
           </div>
-
-          <h2 class="muted gap-section" data-i18n="device"></h2>
-          <form class="row charge-row" id="charge-form">
-            <div class="charge-text">
-              <span data-i18n="charge"></span>
-              <span class="muted range" id="charge-range"></span>
-            </div>
-            <div class="charge-controls">
-              <input class="field charge-input" id="charge" inputmode="numeric" maxlength="3" autocomplete="off" />
-              <button class="square-btn" id="charge-apply" type="submit" data-i18n-title="chargeApply">
-                <svg viewBox="0 0 18 14"><path d="M1.5 7.5l5 5L16.5 1.5" /></svg>
-              </button>
-            </div>
-          </form>
         </section>
 
         <section class="col right">

@@ -8,14 +8,15 @@ A small Windows app that monitors a Marstek battery (Venus C/D/E, Venus E mini) 
 
 - Charge level, energy (kWh), input/output power, temperature, operating mode.
 - Device search on the local network (UDP broadcast), or manual IP and port.
-- Charging at a set power (100–800 W). The ✓ button switches the device to **Passive** mode
-  with `power = -W` (negative means charge) for 24 h (`cd_time = 86400`, the firmware maximum).
+- Read-only: MarsWin shows data and never changes the device's mode.
 - Tray icon with charge level in the tooltip. **Left click** shows a small widget (charge, bar,
-  in/out power, status) in the screen corner next to the tray; ⤢ opens the main window, × hides it.
-  **Right click**: Open window, Settings, Close (quit).
+  in/out power, status) next to the taskbar: above a bottom taskbar, below a top one, beside a
+  side one, centred on the tray icon. ⤢ opens the main window, × hides it.
+  **Right click**: Open window, Settings, Start with Windows (check), Close (quit).
 - `marswin.exe --widget` toggles the widget by the cursor (for a shortcut or hotkey).
 - × on the main window hides it to the tray.
-- Starts with Windows (hidden in the tray); switched on at first run.
+- Starts with Windows (hidden in the tray); switched on at first run. Toggle it in Settings or
+  in the tray menu; both stay in step.
 - Exchange log of raw requests and replies: `%APPDATA%\com.marswin.app\marswin.log`.
 - Ukrainian and English.
 
@@ -72,8 +73,9 @@ cd src-tauri && cargo test
   hidden caption (~29 logical px) taller than asked, and `set_size` to the size it "already has"
   does nothing. `set_client_size` in `lib.rs` steps through another size first. Check with
   `GetClientRect`, not by eye: a flex layout hides the extra height.
-- **Widget position:** the taskbar can be on any edge (here it is at the top). The widget goes to
-  the work-area corner nearest the tray click, not always bottom-right.
+- **Widget position:** the taskbar can be on any edge (on the dev machine it is at the top).
+  `fit::taskbar_edge` finds it from where the work area is cut from the monitor; an auto-hidden
+  taskbar cuts nothing, so the edge nearest the click is used. Tests in `fit.rs` cover all edges.
 - **Screen fit:** window size comes from `fit.rs` (0.72 of the design, at most 55 % of the
   work-area height). The page follows with CSS `zoom` (`fitZoom` in `api.ts`). Change the
   numbers there, not the CSS.
@@ -82,8 +84,7 @@ cd src-tauri && cargo test
 - **Screenshots of the real window:** a PowerShell capture must be per-monitor DPI aware, or
   it gets scaled coordinates and crops the window.
 - **Key order in requests:** `serde_json` sorts object keys unless the `preserve_order` feature
-  is on. Polls (`{"id":0}`) work either way, but `ES.SetMode` must go out in the documented
-  order (`id`, `config`; `power`, `cd_time`). A test in `marstek.rs` pins it.
-- **Mode changes are slow and lossy:** `ES.SetMode` uses `call_retry` (at least 10 s per
-  attempt, 3 attempts), as the Home Assistant integration does. Raw requests and replies go to
-  `%APPDATA%\com.marswin.app\marswin.log`.
+  is on. Polls (`{"id":0}`) work either way, but multi-key params (e.g. `ES.SetMode`) must go
+  out in the documented order. A test in `marstek.rs` pins it.
+- **If mode control comes back:** `ES.SetMode` is slow and lossy; the Home Assistant
+  integration waits 15 s and retries 3 times. (MarsWin 1.1.0 had this; 1.2.0 removed charging.)

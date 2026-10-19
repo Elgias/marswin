@@ -20,12 +20,8 @@ const uk = {
   refresh: "Частота оновлення",
   modeCheck: "Перевірка режиму",
   timeout: "Тайм-аут",
+  autostart: "Запускати з Windows",
   device: "Пристрій",
-  charge: "Заряджання (W)",
-  chargeRange: "Діапазон {min}-{max}",
-  chargeApply: "Увімкнути заряджання з цією потужністю",
-  chargeDone: "Режим Passive: заряджання {w} W",
-  chargeSending: "Надсилаю команду… (до 40 с)",
   pickDevice: "Вибрати пристрій",
   searching: "Пошук пристроїв…",
   nothingFound: "Пристроїв не знайдено. Перевірте, що Open API увімкнено в застосунку Marstek.",
@@ -41,10 +37,8 @@ const uk = {
   min: "{n} хв",
   badIp: "Невірна IP-адреса",
   badPort: "Невірний порт",
-  badPower: "Потужність має бути від {min} до {max} W",
   failed: "Помилка: {e}",
   timeoutErr: "пристрій не відповідає",
-  rejected: "пристрій відхилив команду",
 };
 
 const en: typeof uk = {
@@ -67,12 +61,8 @@ const en: typeof uk = {
   refresh: "Refresh rate",
   modeCheck: "Mode check",
   timeout: "Timeout",
+  autostart: "Start with Windows",
   device: "Device",
-  charge: "Charging (W)",
-  chargeRange: "Range {min}-{max}",
-  chargeApply: "Start charging at this power",
-  chargeDone: "Passive mode: charging at {w} W",
-  chargeSending: "Sending the command… (up to 40 s)",
   pickDevice: "Select device",
   searching: "Searching for devices…",
   nothingFound: "No devices found. Check that Open API is enabled in the Marstek app.",
@@ -88,10 +78,8 @@ const en: typeof uk = {
   min: "{n} min",
   badIp: "Invalid IP address",
   badPort: "Invalid port",
-  badPower: "Power must be {min} to {max} W",
   failed: "Error: {e}",
   timeoutErr: "device does not respond",
-  rejected: "device rejected the command",
 };
 
 export type Key = keyof typeof uk;
@@ -121,7 +109,6 @@ export function translatePage(): void {
 export function errorText(e: unknown): string {
   const raw = String(e);
   if (raw === "timeout") return t("timeoutErr");
-  if (raw === "rejected") return t("rejected");
   return raw;
 }
 

@@ -27,9 +27,108 @@ pub fn size(win: &Window, area: (f64, f64)) -> (f64, f64) {
     ((w * k).round(), (h * k).round())
 }
 
+/// A rectangle in physical px: x, y, width, height.
+pub type Rect = (i32, i32, i32, i32);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Edge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+/// The taskbar's edge: the side where the work area is cut from the monitor. An auto-hidden
+/// taskbar cuts nothing; then the monitor edge nearest to the click (the tray) wins.
+pub fn taskbar_edge(monitor: Rect, work: Rect, click: (i32, i32)) -> Edge {
+    let (mx, my, mw, mh) = monitor;
+    let (wx, wy, ww, wh) = work;
+    if wy > my {
+        return Edge::Top;
+    }
+    if wy + wh < my + mh {
+        return Edge::Bottom;
+    }
+    if wx > mx {
+        return Edge::Left;
+    }
+    if wx + ww < mx + mw {
+        return Edge::Right;
+    }
+    let gaps = [
+        (click.1 - my, Edge::Top),
+        (my + mh - click.1, Edge::Bottom),
+        (click.0 - mx, Edge::Left),
+        (mx + mw - click.0, Edge::Right),
+    ];
+    gaps.into_iter().min_by_key(|g| g.0).map_or(Edge::Bottom, |g| g.1)
+}
+
+/// Top-left corner for the widget: next to the taskbar (above a bottom one, below a top one),
+/// centred on the tray click along the taskbar and kept inside the work area.
+pub fn widget_position(edge: Edge, work: Rect, size: (i32, i32), click: (i32, i32), margin: i32) -> (i32, i32) {
+    let (wx, wy, ww, wh) = work;
+    let (w, h) = size;
+    let along_x = (click.0 - w / 2).clamp(wx + margin, (wx + ww - w - margin).max(wx + margin));
+    let along_y = (click.1 - h / 2).clamp(wy + margin, (wy + wh - h - margin).max(wy + margin));
+    match edge {
+        Edge::Bottom => (along_x, wy + wh - h - margin),
+        Edge::Top => (along_x, wy + margin),
+        Edge::Left => (wx + margin, along_y),
+        Edge::Right => (wx + ww - w - margin, along_y),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MON: Rect = (0, 0, 3840, 2160);
+    const SIZE: (i32, i32) = (588, 228);
+
+    #[test]
+    fn widget_sits_above_a_bottom_taskbar() {
+        let work = (0, 0, 3840, 2088);
+        let edge = taskbar_edge(MON, work, (3600, 2120));
+        assert_eq!(edge, Edge::Bottom);
+        assert_eq!(widget_position(edge, work, SIZE, (3600, 2120), 18), (3234, 2088 - 228 - 18));
+    }
+
+    #[test]
+    fn widget_sits_below_a_top_taskbar() {
+        let work = (0, 72, 3840, 2088);
+        let edge = taskbar_edge(MON, work, (3339, 36));
+        assert_eq!(edge, Edge::Top);
+        // Centred under the icon: 3339 - 294 = 3045.
+        assert_eq!(widget_position(edge, work, SIZE, (3339, 36), 18), (3045, 72 + 18));
+    }
+
+    #[test]
+    fn widget_sits_beside_side_taskbars() {
+        let left = (96, 0, 3744, 2160);
+        assert_eq!(taskbar_edge(MON, left, (40, 2000)), Edge::Left);
+        // Centred on the click along the taskbar: 2000 - 228 / 2.
+        assert_eq!(widget_position(Edge::Left, left, SIZE, (40, 2000), 18), (96 + 18, 1886));
+        let right = (0, 0, 3744, 2160);
+        assert_eq!(taskbar_edge(MON, right, (3800, 2000)), Edge::Right);
+        assert_eq!(widget_position(Edge::Right, right, SIZE, (3800, 2000), 18).0, 3744 - 588 - 18);
+    }
+
+    #[test]
+    fn auto_hidden_taskbar_uses_the_nearest_edge_to_the_click() {
+        assert_eq!(taskbar_edge(MON, MON, (3700, 2150)), Edge::Bottom);
+        assert_eq!(taskbar_edge(MON, MON, (3700, 5)), Edge::Top);
+    }
+
+    #[test]
+    fn widget_on_a_secondary_monitor_stays_on_it() {
+        // Monitor to the left of the primary, at negative x.
+        let mon = (-1920, 0, 1920, 1080);
+        let work = (-1920, 0, 1920, 1032);
+        let edge = taskbar_edge(mon, work, (-100, 1060));
+        let (x, y) = widget_position(edge, work, (392, 152), (-100, 1060), 12);
+        assert!(x >= -1920 && x + 392 <= 0 && y + 152 <= 1032, "{x},{y}");
+    }
 
     /// Work area in logical px: physical resolution / scaling, minus a 48 px taskbar.
     fn area(w: f64, h: f64, scale: f64) -> (f64, f64) {

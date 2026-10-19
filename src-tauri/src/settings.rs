@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub const CHARGE_MIN: u32 = 100;
-pub const CHARGE_MAX: u32 = 800;
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DeviceRef {
     pub ip: String,
@@ -19,9 +16,8 @@ pub struct Settings {
     pub refresh_sec: u32,
     pub mode_check_sec: u32,
     pub timeout_sec: u32,
-    pub charge_power: u32,
     pub device: Option<DeviceRef>,
-    /// Autostart is switched on once, on the first run; after that the tray toggle owns it.
+    /// Autostart is switched on once, on the first run; after that the tray menu and the settings switch own it.
     pub autostart_initialized: bool,
 }
 
@@ -32,7 +28,6 @@ impl Default for Settings {
             refresh_sec: 30,
             mode_check_sec: 60,
             timeout_sec: 5,
-            charge_power: CHARGE_MAX,
             device: None,
             autostart_initialized: false,
         }
@@ -92,7 +87,6 @@ impl Settings {
         self.refresh_sec = self.refresh_sec.clamp(2, 3600);
         self.mode_check_sec = self.mode_check_sec.clamp(5, 86400);
         self.timeout_sec = self.timeout_sec.clamp(1, 30);
-        self.charge_power = self.charge_power.clamp(CHARGE_MIN, CHARGE_MAX);
         self
     }
 }

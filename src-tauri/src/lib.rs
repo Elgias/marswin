@@ -4,13 +4,13 @@ mod settings;
 mod snapshot;
 
 use serde_json::{json, Value};
-use settings::{DeviceRef, Settings, SettingsPatch, CHARGE_MAX, CHARGE_MIN};
+use settings::{DeviceRef, Settings, SettingsPatch};
 use snapshot::{Flow, Snapshot};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
@@ -24,12 +24,7 @@ const HIDDEN_ARG: &str = "--hidden";
 /// `marswin.exe --widget` toggles the widget by the cursor, as a tray click does (for shortcuts).
 const WIDGET_ARG: &str = "--widget";
 const TRAY_ID: &str = "tray";
-/// Passive mode needs a countdown; 24 h is the longest the firmware accepts.
-const PASSIVE_SECONDS: u32 = 86_400;
 const DISCOVER_WAIT: Duration = Duration::from_millis(2500);
-/// Mode changes are slow on the device; wait at least this long per attempt.
-const SET_MODE_MIN_WAIT: Duration = Duration::from_secs(10);
-const SET_MODE_ATTEMPTS: u32 = 3;
 const LOG_FILE: &str = "marswin.log";
 const BG: tauri::window::Color = tauri::window::Color(9, 9, 11, 255);
 
@@ -71,6 +66,7 @@ fn tr(lang: &str, key: &str) -> &'static str {
         "show" => if en { "Open window" } else { "Відкрити вікно" },
         "settings" => if en { "Settings" } else { "Налаштування" },
         "quit" => if en { "Close" } else { "Закрити" },
+        "autostart" => if en { "Start with Windows" } else { "Запускати з Windows" },
         "charging" => if en { "Charging" } else { "Заряджання" },
         "discharging" => if en { "Discharging" } else { "Розряджання" },
         "idle" => if en { "Idle" } else { "Очікування" },
@@ -100,11 +96,13 @@ fn tooltip(lang: &str, snap: &Snapshot, has_device: bool) -> String {
 }
 
 fn build_menu(app: &AppHandle, lang: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let autostart = app.autolaunch().is_enabled().unwrap_or(false);
     Menu::with_items(
         app,
         &[
             &MenuItem::with_id(app, "show", tr(lang, "show"), true, None::<&str>)?,
             &MenuItem::with_id(app, "settings", tr(lang, "settings"), true, None::<&str>)?,
+            &CheckMenuItem::with_id(app, "autostart", tr(lang, "autostart"), true, autostart, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", tr(lang, "quit"), true, None::<&str>)?,
         ],
@@ -118,6 +116,16 @@ fn refresh_tray(app: &AppHandle) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(tooltip(&s.lang, &snap, s.device.is_some())));
     }
+}
+
+/// Turns autostart on or off and tells the tray menu and the settings window.
+fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<bool, String> {
+    let al = app.autolaunch();
+    if enabled { al.enable() } else { al.disable() }.map_err(|e| e.to_string())?;
+    let now = al.is_enabled().unwrap_or(enabled);
+    rebuild_tray_menu(app);
+    let _ = app.emit("autostart", now);
+    Ok(now)
 }
 
 fn rebuild_tray_menu(app: &AppHandle) {
@@ -210,11 +218,11 @@ fn toggle_widget(app: &AppHandle, click: PhysicalPosition<f64>) {
     set_client_size(&win, w, h);
     let size = win.outer_size().unwrap_or_default();
     let margin = (12.0 * scale) as i32;
-    // The taskbar can be on any edge: take the work-area corner nearest to the click.
-    let (left, top) = (area.position.x, area.position.y);
-    let (right, bottom) = (left + area.size.width as i32, top + area.size.height as i32);
-    let x = if (click.x as i32) < (left + right) / 2 { left + margin } else { right - size.width as i32 - margin };
-    let y = if (click.y as i32) < (top + bottom) / 2 { top + margin } else { bottom - size.height as i32 - margin };
+    let rect = |p: PhysicalPosition<i32>, s: tauri::PhysicalSize<u32>| (p.x, p.y, s.width as i32, s.height as i32);
+    let work = rect(area.position, area.size);
+    let click = (click.x as i32, click.y as i32);
+    let edge = fit::taskbar_edge(rect(*monitor.position(), *monitor.size()), work, click);
+    let (x, y) = fit::widget_position(edge, work, (size.width as i32, size.height as i32), click, margin);
     let _ = win.set_position(PhysicalPosition::new(x, y));
     let _ = win.show();
     let _ = win.set_focus();
@@ -385,35 +393,20 @@ async fn connect(app: AppHandle, shared: State<'_, Shared>, ip: String, port: u1
     Ok(after)
 }
 
-/// Switches the device to Passive mode, charging from the grid at `power` W.
-#[tauri::command]
-async fn set_charge_power(app: AppHandle, shared: State<'_, Shared>, power: u32) -> Result<Settings, String> {
-    if !(CHARGE_MIN..=CHARGE_MAX).contains(&power) {
-        return Err(format!("range {CHARGE_MIN}-{CHARGE_MAX}"));
-    }
-    let s = shared.settings();
-    let dev = s.device.ok_or("no device")?;
-    let wait = Duration::from_secs(s.timeout_sec.into()).max(SET_MODE_MIN_WAIT);
-    let config = json!({
-        "mode": "Passive",
-        // Negative power means charge.
-        "passive_cfg": { "power": -(power as i64), "cd_time": PASSIVE_SECONDS }
-    });
-    let params = json!({ "id": 0, "config": config });
-    let result = marstek::call_retry(&dev.ip, dev.port, "ES.SetMode", params, wait, SET_MODE_ATTEMPTS).await?;
-    if result.get("set_result").and_then(Value::as_bool) == Some(false) {
-        return Err("rejected".into());
-    }
-    let after = shared.update(|s| s.charge_power = power)?;
-    let _ = app.emit("settings", after.clone());
-    shared.poll_now(true);
-    Ok(after)
-}
-
 /// Must be async: creating a window from a sync command deadlocks on Windows.
 #[tauri::command]
 async fn open_settings(app: AppHandle) -> Result<(), String> {
     show_settings(&app)
+}
+
+#[tauri::command]
+fn get_autostart(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[tauri::command]
+fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    apply_autostart(&app, enabled)
 }
 
 #[tauri::command]
@@ -480,6 +473,10 @@ pub fn run() {
                     "settings" => {
                         let _ = show_settings(app);
                     }
+                    "autostart" => {
+                        let on = app.autolaunch().is_enabled().unwrap_or(false);
+                        let _ = apply_autostart(app, !on);
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -517,9 +514,10 @@ pub fn run() {
             save_settings,
             discover,
             connect,
-            set_charge_power,
             open_settings,
             open_main,
+            get_autostart,
+            set_autostart,
             app_version
         ])
         .run(tauri::generate_context!())

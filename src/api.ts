@@ -17,7 +17,6 @@ export interface Settings {
   refreshSec: number;
   modeCheckSec: number;
   timeoutSec: number;
-  chargePower: number;
   device: DeviceRef | null;
 }
 
@@ -45,19 +44,16 @@ export interface Found {
 
 export type SettingsPatch = Partial<Pick<Settings, "lang" | "refreshSec" | "modeCheckSec" | "timeoutSec">>;
 
-export const CHARGE_MIN = 100;
-export const CHARGE_MAX = 800;
-
 /** Outside Tauri (plain `npm run dev` in a browser) the app runs on mock data. */
 const inTauri = "__TAURI_INTERNALS__" in window;
 
 const mockDevice: DeviceRef = { ip: "192.168.1.101", port: 30000, name: "VNSEM-0", ver: 301 };
+let mockAutostart = true;
 let mockSettings: Settings = {
   lang: "uk",
   refreshSec: 30,
   modeCheckSec: 60,
   timeoutSec: 5,
-  chargePower: 800,
   device: mockDevice,
 };
 const mockSnapshot: Snapshot = {
@@ -90,9 +86,11 @@ async function mock<T>(cmd: string, args: Record<string, unknown> = {}): Promise
     case "connect":
       mockSettings = { ...mockSettings, device: { ...mockDevice, ip: args.ip as string, port: args.port as number } };
       return mockSettings as T;
-    case "set_charge_power":
-      mockSettings = { ...mockSettings, chargePower: args.power as number };
-      return mockSettings as T;
+    case "get_autostart":
+      return mockAutostart as T;
+    case "set_autostart":
+      mockAutostart = args.enabled as boolean;
+      return mockAutostart as T;
     case "app_version":
       return "1.0.0" as T;
     default:
@@ -110,14 +108,20 @@ export const api = {
   saveSettings: (patch: SettingsPatch) => call<Settings>("save_settings", { patch }),
   discover: (port?: number) => call<Found[]>("discover", { port }),
   connect: (ip: string, port: number) => call<Settings>("connect", { ip, port }),
-  setChargePower: (power: number) => call<Settings>("set_charge_power", { power }),
   openSettings: () => call<void>("open_settings"),
   openMain: () => call<void>("open_main"),
+  getAutostart: () => call<boolean>("get_autostart"),
+  setAutostart: (enabled: boolean) => call<boolean>("set_autostart", { enabled }),
   appVersion: () => call<string>("app_version"),
 };
 
 export function onSnapshot(cb: (s: Snapshot) => void): void {
   if (inTauri) void listen<Snapshot>("snapshot", (e) => cb(e.payload));
+}
+
+/** Autostart was switched elsewhere (tray menu or another window). */
+export function onAutostart(cb: (enabled: boolean) => void): void {
+  if (inTauri) void listen<boolean>("autostart", (e) => cb(e.payload));
 }
 
 export function onSettings(cb: (s: Settings) => void): void {

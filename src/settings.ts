@@ -2,9 +2,8 @@ import "./styles.css";
 import "./settings.css";
 import {
   api,
-  CHARGE_MAX,
-  CHARGE_MIN,
   fitZoom,
+  onAutostart,
   onSettings,
   onSnapshot,
   toast,
@@ -106,12 +105,8 @@ function applySettings(next: Settings): void {
   if (langChanged) {
     setLang(next.lang);
     translatePage();
-    $("charge-range").textContent = t("chargeRange", { min: CHARGE_MIN, max: CHARGE_MAX });
   }
   renderSelects();
-  const charge = $<HTMLInputElement>("charge");
-  if (document.activeElement !== charge) charge.value = String(next.chargePower);
-  $<HTMLButtonElement>("charge-apply").disabled = !next.device;
   renderDevices();
   renderConnection();
 }
@@ -148,6 +143,21 @@ async function connect(ip: string, port: number): Promise<void> {
 }
 
 $("close").addEventListener("click", () => void win.close());
+
+const autostart = $<HTMLInputElement>("autostart");
+autostart.addEventListener("change", async () => {
+  const wanted = autostart.checked;
+  autostart.disabled = true;
+  try {
+    autostart.checked = await api.setAutostart(wanted);
+  } catch (e) {
+    autostart.checked = !wanted;
+    toast(t("failed", { e: errorText(e) }), true);
+  } finally {
+    autostart.disabled = false;
+  }
+});
+onAutostart((on) => (autostart.checked = on));
 $("rescan").addEventListener("click", () => void scan());
 
 $("manual-form").addEventListener("submit", (e) => {
@@ -165,31 +175,9 @@ $("manual-form").addEventListener("submit", (e) => {
   void connect(ip, port);
 });
 
-for (const id of ["ip", "port", "charge"]) {
+for (const id of ["ip", "port"]) {
   $(id).addEventListener("input", (e) => (e.target as HTMLElement).classList.remove("invalid"));
 }
-
-$("charge-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = $<HTMLInputElement>("charge");
-  const power = Number(input.value);
-  if (!Number.isInteger(power) || power < CHARGE_MIN || power > CHARGE_MAX) {
-    input.classList.add("invalid");
-    return toast(t("badPower", { min: CHARGE_MIN, max: CHARGE_MAX }), true);
-  }
-  const button = $<HTMLButtonElement>("charge-apply");
-  button.disabled = true;
-  toast(t("chargeSending"));
-  try {
-    applySettings(await api.setChargePower(power));
-    input.blur();
-    toast(t("chargeDone", { w: power }));
-  } catch (e) {
-    toast(t("failed", { e: errorText(e) }), true);
-  } finally {
-    button.disabled = !settings.device;
-  }
-});
 
 fitZoom(1128);
 onSettings(applySettings);
@@ -198,7 +186,13 @@ onSnapshot((s) => {
   renderConnection();
 });
 
-const [first, firstSnap, version] = await Promise.all([api.getSettings(), api.getSnapshot(), api.appVersion()]);
+const [first, firstSnap, version, autostartOn] = await Promise.all([
+  api.getSettings(),
+  api.getSnapshot(),
+  api.appVersion(),
+  api.getAutostart(),
+]);
+autostart.checked = autostartOn;
 snapshot = firstSnap;
 $("version").textContent = `v${version}`;
 applySettings(first);

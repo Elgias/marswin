@@ -87,6 +87,51 @@ h2 {
   line-height: 1;
 }
 
+.switch-row {
+  height: 54px;
+  cursor: pointer;
+}
+
+/* On/off switch in the dropdowns' style: dark track, green when on. */
+.switch {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 64px;
+  height: 36px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.switch:checked {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.switch:checked::after {
+  transform: translateX(28px);
+  background: var(--text);
+}
+
+.switch:disabled {
+  opacity: 0.5;
+}
+
 .select {
   position: relative;
 }
@@ -153,55 +198,6 @@ h2 {
 
 .select-list li.selected {
   color: var(--green);
-}
-
-.charge-row {
-  margin-top: 34px;
-}
-
-.charge-text {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.range {
-  font-size: 19px;
-}
-
-.charge-controls {
-  display: flex;
-  gap: 12px;
-}
-
-.charge-input {
-  width: 87px;
-  padding: 0;
-  text-align: center;
-}
-
-.square-btn {
-  width: 53px;
-  height: 52px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-}
-
-.square-btn:not(:disabled):hover {
-  background: #16161a;
-}
-
-.square-btn svg {
-  width: 18px;
-  height: 14px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 /* ------------------------------------------------------------ right column */

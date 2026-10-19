@@ -116,28 +116,6 @@ pub async fn call(ip: &str, port: u16, method: &str, params: Value, wait: Durati
     }
 }
 
-/// `call` that repeats on timeout. For commands that change state the device can be slow,
-/// and a lost UDP datagram is common; repeating ES.SetMode is safe (same config again).
-pub async fn call_retry(
-    ip: &str,
-    port: u16,
-    method: &str,
-    params: Value,
-    wait: Duration,
-    attempts: u32,
-) -> Result<Value, String> {
-    let mut attempt = 1;
-    loop {
-        match call(ip, port, method, params.clone(), wait).await {
-            Err(e) if e == "timeout" && attempt < attempts => {
-                tokio::time::sleep(Duration::from_millis(1500 * u64::from(attempt))).await;
-                attempt += 1;
-            }
-            other => return other,
-        }
-    }
-}
-
 /// Broadcast targets: the global broadcast plus the directed broadcast of every
 /// IPv4 interface, because Windows sends 255.255.255.255 out of one adapter only.
 fn broadcast_targets() -> Vec<Ipv4Addr> {
