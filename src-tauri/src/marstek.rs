@@ -2,10 +2,12 @@
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
 use tokio::time::{timeout_at, Instant};
@@ -15,6 +17,29 @@ pub const DEFAULT_PORT: u16 = 30000;
 /// The device handles one UDP request at a time, so every exchange takes this lock.
 static WIRE: Mutex<()> = Mutex::const_new(());
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+static LOG: OnceLock<PathBuf> = OnceLock::new();
+/// The exchange log is cut back to empty when it grows past this size.
+const LOG_MAX_BYTES: u64 = 512 * 1024;
+
+/// Turns on the exchange log (raw requests and replies), for diagnosing a device remotely.
+pub fn set_log_path(path: PathBuf) {
+    let _ = LOG.set(path);
+}
+
+fn log(line: &str) {
+    let Some(path) = LOG.get() else { return };
+    let too_big = std::fs::metadata(path).is_ok_and(|m| m.len() > LOG_MAX_BYTES);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(!too_big)
+        .write(true)
+        .truncate(too_big)
+        .open(path);
+    if let Ok(mut f) = file {
+        let secs = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()) % 86_400;
+        let _ = writeln!(f, "{:02}:{:02}:{:02} UTC {line}", secs / 3600, secs / 60 % 60, secs % 60);
+    }
+}
 
 #[derive(Serialize, Clone, Debug)]
 pub struct Found {
@@ -55,16 +80,19 @@ pub async fn call(ip: &str, port: u16, method: &str, params: Value, wait: Durati
     let _wire = WIRE.lock().await;
     let sock = bind(port).await.map_err(|e| e.to_string())?;
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-    sock.send_to(&request(id, method, params), addr)
-        .await
-        .map_err(|e| e.to_string())?;
+    let msg = request(id, method, params);
+    log(&format!("-> {addr} {}", String::from_utf8_lossy(&msg)));
+    sock.send_to(&msg, addr).await.map_err(|e| e.to_string())?;
 
     let deadline = Instant::now() + wait;
     let mut buf = vec![0u8; 8192];
     loop {
-        let Some((n, from)) = recv(&sock, &mut buf, deadline).await? else {
+        let got = recv(&sock, &mut buf, deadline).await.inspect_err(|e| log(&format!("!! {method} {e}")))?;
+        let Some((n, from)) = got else {
+            log(&format!("!! {method} timeout after {}s", wait.as_secs()));
             return Err("timeout".into());
         };
+        log(&format!("<- {from} {}", String::from_utf8_lossy(&buf[..n])));
         if from.ip() != ip {
             continue;
         }
@@ -85,6 +113,28 @@ pub async fn call(ip: &str, port: u16, method: &str, params: Value, wait: Durati
             return Err(format!("{msg} ({code})"));
         }
         return Ok(reply.get("result").cloned().unwrap_or(Value::Null));
+    }
+}
+
+/// `call` that repeats on timeout. For commands that change state the device can be slow,
+/// and a lost UDP datagram is common; repeating ES.SetMode is safe (same config again).
+pub async fn call_retry(
+    ip: &str,
+    port: u16,
+    method: &str,
+    params: Value,
+    wait: Duration,
+    attempts: u32,
+) -> Result<Value, String> {
+    let mut attempt = 1;
+    loop {
+        match call(ip, port, method, params.clone(), wait).await {
+            Err(e) if e == "timeout" && attempt < attempts => {
+                tokio::time::sleep(Duration::from_millis(1500 * u64::from(attempt))).await;
+                attempt += 1;
+            }
+            other => return other,
+        }
     }
 }
 
@@ -144,4 +194,19 @@ pub async fn discover(port: u16, wait: Duration) -> Result<Vec<Found>, String> {
     }
     found.sort_by(|a, b| a.ip.cmp(&b.ip));
     Ok(found)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_keeps_documented_key_order() {
+        let params = json!({ "id": 0, "config": { "mode": "Passive", "passive_cfg": { "power": -800, "cd_time": 86400 } } });
+        let text = String::from_utf8(request(7, "ES.SetMode", params)).unwrap();
+        assert_eq!(
+            text,
+            r#"{"id":7,"method":"ES.SetMode","params":{"id":0,"config":{"mode":"Passive","passive_cfg":{"power":-800,"cd_time":86400}}}}"#
+        );
+    }
 }

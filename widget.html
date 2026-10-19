@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MarsWin</title>
+  </head>
+  <body>
+    <div class="frame widget" data-tauri-drag-region>
+      <div class="widget-head" data-tauri-drag-region>
+        <div class="soc" id="soc">—</div>
+        <button class="icon-btn" id="expand" data-i18n-title="openWindow">
+          <svg viewBox="2 2 16 16"><path d="M12 2.8h5.2V8M17.2 2.8l-6 6M8 17.2H2.8V12M2.8 17.2l6-6" /></svg>
+        </button>
+        <button class="icon-btn" id="close" data-i18n-title="close">
+          <svg viewBox="2 2 12 12"><path d="M2.7 2.7l10.6 10.6M13.3 2.7L2.7 13.3" /></svg>
+        </button>
+      </div>
+      <div class="bar"><div class="bar-fill" id="bar"></div></div>
+      <div class="widget-meta" data-tauri-drag-region>
+        <span class="muted flow"><svg viewBox="0 0 10 18"><path d="M5 17V1.5M1 5.5l4-4 4 4" /></svg><span id="input">—</span></span>
+        <span class="muted flow"><svg viewBox="0 0 10 18"><path d="M5 1v15.5M1 12.5l4 4 4-4" /></svg><span id="output">—</span></span>
+        <span class="status" id="status"></span>
+      </div>
+    </div>
+    <script type="module" src="/src/widget.ts"></script>
+  </body>
+</html>

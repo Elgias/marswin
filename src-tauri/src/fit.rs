@@ -16,6 +16,7 @@ pub struct Window {
 
 pub const MAIN: Window = Window { design: (565.0, 713.0), max_share: (0.5, 0.55) };
 pub const SETTINGS: Window = Window { design: (1128.0, 873.0), max_share: (0.9, 0.8) };
+pub const WIDGET: Window = Window { design: (545.0, 211.0), max_share: (0.4, 0.25) };
 
 /// Logical window size for a work area given in logical pixels.
 pub fn size(win: &Window, area: (f64, f64)) -> (f64, f64) {

@@ -112,6 +112,7 @@ export const api = {
   connect: (ip: string, port: number) => call<Settings>("connect", { ip, port }),
   setChargePower: (power: number) => call<Settings>("set_charge_power", { power }),
   openSettings: () => call<void>("open_settings"),
+  openMain: () => call<void>("open_main"),
   appVersion: () => call<string>("app_version"),
 };
 

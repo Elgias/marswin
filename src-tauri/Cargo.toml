@@ -1,6 +1,6 @@
 [package]
 name = "marswin"
-version = "1.0.0"
+version = "1.1.0"
 description = "MarsWin - Marstek battery monitor for Windows"
 edition = "2021"
 
@@ -16,7 +16,8 @@ tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# preserve_order: keys go out in the documented order; firmware parsers may depend on it.
+serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["net", "time", "sync", "macros"] }
 if-addrs = "0.13"
 

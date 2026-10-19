@@ -3,6 +3,7 @@ import type { Lang } from "./api";
 const uk = {
   settings: "Налаштування",
   minimize: "Згорнути",
+  openWindow: "Відкрити вікно",
   close: "Закрити",
   input: "Вхід",
   output: "Вихід",
@@ -24,6 +25,7 @@ const uk = {
   chargeRange: "Діапазон {min}-{max}",
   chargeApply: "Увімкнути заряджання з цією потужністю",
   chargeDone: "Режим Passive: заряджання {w} W",
+  chargeSending: "Надсилаю команду… (до 40 с)",
   pickDevice: "Вибрати пристрій",
   searching: "Пошук пристроїв…",
   nothingFound: "Пристроїв не знайдено. Перевірте, що Open API увімкнено в застосунку Marstek.",
@@ -48,6 +50,7 @@ const uk = {
 const en: typeof uk = {
   settings: "Settings",
   minimize: "Minimize",
+  openWindow: "Open window",
   close: "Close",
   input: "Input",
   output: "Output",
@@ -69,6 +72,7 @@ const en: typeof uk = {
   chargeRange: "Range {min}-{max}",
   chargeApply: "Start charging at this power",
   chargeDone: "Passive mode: charging at {w} W",
+  chargeSending: "Sending the command… (up to 40 s)",
   pickDevice: "Select device",
   searching: "Searching for devices…",
   nothingFound: "No devices found. Check that Open API is enabled in the Marstek app.",

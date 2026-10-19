@@ -10,8 +10,13 @@ A small Windows app that monitors a Marstek battery (Venus C/D/E, Venus E mini) 
 - Device search on the local network (UDP broadcast), or manual IP and port.
 - Charging at a set power (100–800 W). The ✓ button switches the device to **Passive** mode
   with `power = -W` (negative means charge) for 24 h (`cd_time = 86400`, the firmware maximum).
-- Tray icon with charge level in the tooltip. × hides the window to the tray; quit from the tray menu.
-- Starts with Windows (hidden in the tray). Toggle it in the tray menu.
+- Tray icon with charge level in the tooltip. **Left click** shows a small widget (charge, bar,
+  in/out power, status) in the screen corner next to the tray; ⤢ opens the main window, × hides it.
+  **Right click**: Open window, Settings, Close (quit).
+- `marswin.exe --widget` toggles the widget by the cursor (for a shortcut or hotkey).
+- × on the main window hides it to the tray.
+- Starts with Windows (hidden in the tray); switched on at first run.
+- Exchange log of raw requests and replies: `%APPDATA%\com.marswin.app\marswin.log`.
 - Ukrainian and English.
 
 ## Before first use
@@ -41,7 +46,9 @@ cd src-tauri && cargo test
 | `src-tauri/src/snapshot.rs` | Turns API replies into dashboard values (unit scaling per firmware) |
 | `src-tauri/src/settings.rs` | Settings file (`%APPDATA%\com.marswin.app\settings.json`) |
 | `src-tauri/src/lib.rs` | Polling loop, commands, windows, tray, autostart |
-| `src/main.ts`, `src/settings.ts` | Main window and settings window |
+| `src-tauri/src/fit.rs` | Window sizes per screen (1080p, 1440p, 4K, any scaling) |
+| `src/main.ts`, `src/settings.ts`, `src/widget.ts` | Main window, settings window, tray widget |
+| `src/view.ts` | Formatting and status shared by the main window and the widget |
 
 ## Data mapping
 
@@ -61,6 +68,12 @@ cd src-tauri && cargo test
 - **Own packets look like replies:** the client binds the device port (some firmware answers
   only to it). On the same host, the request comes back to us. `marstek::call` skips any
   datagram that has `method` or lacks both `result` and `error`.
+- **Undecorated window size:** on Windows a window built without decorations comes out one
+  hidden caption (~29 logical px) taller than asked, and `set_size` to the size it "already has"
+  does nothing. `set_client_size` in `lib.rs` steps through another size first. Check with
+  `GetClientRect`, not by eye: a flex layout hides the extra height.
+- **Widget position:** the taskbar can be on any edge (here it is at the top). The widget goes to
+  the work-area corner nearest the tray click, not always bottom-right.
 - **Screen fit:** window size comes from `fit.rs` (0.72 of the design, at most 55 % of the
   work-area height). The page follows with CSS `zoom` (`fitZoom` in `api.ts`). Change the
   numbers there, not the CSS.
@@ -68,3 +81,9 @@ cd src-tauri && cargo test
   UDP emulator on another port (e.g. 30002) and set the device to `127.0.0.1:30002`.
 - **Screenshots of the real window:** a PowerShell capture must be per-monitor DPI aware, or
   it gets scaled coordinates and crops the window.
+- **Key order in requests:** `serde_json` sorts object keys unless the `preserve_order` feature
+  is on. Polls (`{"id":0}`) work either way, but `ES.SetMode` must go out in the documented
+  order (`id`, `config`; `power`, `cd_time`). A test in `marstek.rs` pins it.
+- **Mode changes are slow and lossy:** `ES.SetMode` uses `call_retry` (at least 10 s per
+  attempt, 3 attempts), as the Home Assistant integration does. Raw requests and replies go to
+  `%APPDATA%\com.marswin.app\marswin.log`.

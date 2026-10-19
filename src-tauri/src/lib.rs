@@ -10,18 +10,27 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
+};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tokio::sync::Notify;
 use tokio::time::Instant;
 
 const HIDDEN_ARG: &str = "--hidden";
+/// `marswin.exe --widget` toggles the widget by the cursor, as a tray click does (for shortcuts).
+const WIDGET_ARG: &str = "--widget";
 const TRAY_ID: &str = "tray";
 /// Passive mode needs a countdown; 24 h is the longest the firmware accepts.
 const PASSIVE_SECONDS: u32 = 86_400;
 const DISCOVER_WAIT: Duration = Duration::from_millis(2500);
+/// Mode changes are slow on the device; wait at least this long per attempt.
+const SET_MODE_MIN_WAIT: Duration = Duration::from_secs(10);
+const SET_MODE_ATTEMPTS: u32 = 3;
+const LOG_FILE: &str = "marswin.log";
 const BG: tauri::window::Color = tauri::window::Color(9, 9, 11, 255);
 
 struct Shared {
@@ -59,10 +68,9 @@ impl Shared {
 fn tr(lang: &str, key: &str) -> &'static str {
     let en = lang == "en";
     match key {
-        "show" => if en { "Open MarsWin" } else { "Відкрити MarsWin" },
+        "show" => if en { "Open window" } else { "Відкрити вікно" },
         "settings" => if en { "Settings" } else { "Налаштування" },
-        "autostart" => if en { "Start with Windows" } else { "Запускати з Windows" },
-        "quit" => if en { "Quit" } else { "Вийти" },
+        "quit" => if en { "Close" } else { "Закрити" },
         "charging" => if en { "Charging" } else { "Заряджання" },
         "discharging" => if en { "Discharging" } else { "Розряджання" },
         "idle" => if en { "Idle" } else { "Очікування" },
@@ -92,13 +100,11 @@ fn tooltip(lang: &str, snap: &Snapshot, has_device: bool) -> String {
 }
 
 fn build_menu(app: &AppHandle, lang: &str) -> tauri::Result<Menu<tauri::Wry>> {
-    let autostart = app.autolaunch().is_enabled().unwrap_or(false);
     Menu::with_items(
         app,
         &[
             &MenuItem::with_id(app, "show", tr(lang, "show"), true, None::<&str>)?,
             &MenuItem::with_id(app, "settings", tr(lang, "settings"), true, None::<&str>)?,
-            &CheckMenuItem::with_id(app, "autostart", tr(lang, "autostart"), true, autostart, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "quit", tr(lang, "quit"), true, None::<&str>)?,
         ],
@@ -124,7 +130,19 @@ fn rebuild_tray_menu(app: &AppHandle) {
 // ---------------------------------------------------------------- windows
 
 fn fit_spec(label: &str) -> &'static fit::Window {
-    if label == "settings" { &fit::SETTINGS } else { &fit::MAIN }
+    match label {
+        "settings" => &fit::SETTINGS,
+        "widget" => &fit::WIDGET,
+        _ => &fit::MAIN,
+    }
+}
+
+/// Sets the client size in logical px. A window created without decorations comes out one
+/// (hidden) caption taller than asked, and setting the size it already "has" is skipped, so
+/// step through a different size first to force a real resize.
+fn set_client_size(win: &WebviewWindow, w: f64, h: f64) {
+    let _ = win.set_size(LogicalSize::new(w, h + 1.0));
+    let _ = win.set_size(LogicalSize::new(w, h));
 }
 
 /// Sizes the window for the monitor it is on (see fit.rs); the page follows with CSS zoom.
@@ -139,7 +157,7 @@ fn resize_to_fit(win: &WebviewWindow, center: bool) {
     };
     let area = monitor.work_area().size.to_logical::<f64>(monitor.scale_factor());
     let (w, h) = fit::size(spec, (area.width, area.height));
-    let _ = win.set_size(tauri::LogicalSize::new(w, h));
+    set_client_size(win, w, h);
     if center {
         let _ = win.center();
     }
@@ -153,14 +171,53 @@ fn show_main(app: &AppHandle) {
     }
 }
 
-fn toggle_main(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window("main") {
-        if w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false) {
-            let _ = w.hide();
-        } else {
-            show_main(app);
-        }
+fn build_widget(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    let (w, h) = fit::WIDGET.design;
+    WebviewWindowBuilder::new(app, "widget", WebviewUrl::App("widget.html".into()))
+        .title("MarsWin")
+        .inner_size(w * fit::BASE_SCALE, h * fit::BASE_SCALE)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .background_color(BG)
+        .visible(false)
+        .build()
+}
+
+/// Shows the widget in the corner above the taskbar of the monitor the tray icon is on,
+/// or hides it when it is already shown.
+fn toggle_widget(app: &AppHandle, click: PhysicalPosition<f64>) {
+    let Some(win) = app.get_webview_window("widget") else { return };
+    if win.is_visible().unwrap_or(false) {
+        let _ = win.hide();
+        return;
     }
+    let monitor = app
+        .monitor_from_point(click.x, click.y)
+        .ok()
+        .flatten()
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else { return };
+    let scale = monitor.scale_factor();
+    let area = monitor.work_area();
+    // Move onto the target monitor first, so the logical size uses its scaling.
+    let _ = win.set_position(area.position);
+    let logical = area.size.to_logical::<f64>(scale);
+    let (w, h) = fit::size(&fit::WIDGET, (logical.width, logical.height));
+    set_client_size(&win, w, h);
+    let size = win.outer_size().unwrap_or_default();
+    let margin = (12.0 * scale) as i32;
+    // The taskbar can be on any edge: take the work-area corner nearest to the click.
+    let (left, top) = (area.position.x, area.position.y);
+    let (right, bottom) = (left + area.size.width as i32, top + area.size.height as i32);
+    let x = if (click.x as i32) < (left + right) / 2 { left + margin } else { right - size.width as i32 - margin };
+    let y = if (click.y as i32) < (top + bottom) / 2 { top + margin } else { bottom - size.height as i32 - margin };
+    let _ = win.set_position(PhysicalPosition::new(x, y));
+    let _ = win.show();
+    let _ = win.set_focus();
 }
 
 fn show_settings(app: &AppHandle) -> Result<(), String> {
@@ -336,13 +393,14 @@ async fn set_charge_power(app: AppHandle, shared: State<'_, Shared>, power: u32)
     }
     let s = shared.settings();
     let dev = s.device.ok_or("no device")?;
-    let wait = Duration::from_secs(s.timeout_sec.into());
+    let wait = Duration::from_secs(s.timeout_sec.into()).max(SET_MODE_MIN_WAIT);
     let config = json!({
         "mode": "Passive",
         // Negative power means charge.
         "passive_cfg": { "power": -(power as i64), "cd_time": PASSIVE_SECONDS }
     });
-    let result = marstek::call(&dev.ip, dev.port, "ES.SetMode", json!({ "id": 0, "config": config }), wait).await?;
+    let params = json!({ "id": 0, "config": config });
+    let result = marstek::call_retry(&dev.ip, dev.port, "ES.SetMode", params, wait, SET_MODE_ATTEMPTS).await?;
     if result.get("set_result").and_then(Value::as_bool) == Some(false) {
         return Err("rejected".into());
     }
@@ -359,6 +417,11 @@ async fn open_settings(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_main(app: AppHandle) {
+    show_main(&app);
+}
+
+#[tauri::command]
 fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
@@ -367,10 +430,19 @@ fn app_version(app: AppHandle) -> String {
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|a| a == WIDGET_ARG) {
+                let at = app.cursor_position().unwrap_or_default();
+                toggle_widget(app, at);
+            } else {
+                show_main(app);
+            }
+        }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN_ARG])))
         .setup(|app| {
-            let path = app.path().app_config_dir()?.join("settings.json");
+            let dir = app.path().app_config_dir()?;
+            let path = dir.join("settings.json");
+            marstek::set_log_path(dir.join(LOG_FILE));
             let settings = Settings::load(&path);
             let handle = app.handle().clone();
 
@@ -393,8 +465,14 @@ pub fn run() {
                 .menu(&build_menu(&handle, &lang)?)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
-                        toggle_main(tray.app_handle());
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        position,
+                        ..
+                    } = event
+                    {
+                        toggle_widget(tray.app_handle(), position);
                     }
                 })
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -402,16 +480,12 @@ pub fn run() {
                     "settings" => {
                         let _ = show_settings(app);
                     }
-                    "autostart" => {
-                        let al = app.autolaunch();
-                        let _ = if al.is_enabled().unwrap_or(false) { al.disable() } else { al.enable() };
-                        rebuild_tray_menu(app);
-                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .build(app)?;
             drop(tray);
+            build_widget(&handle)?;
 
             let main = app.get_webview_window("main").expect("main window");
             resize_to_fit(&main, true);
@@ -424,8 +498,8 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // Closing the main window keeps MarsWin in the tray.
-            WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
+            // Closing the main window or the widget keeps MarsWin in the tray.
+            WindowEvent::CloseRequested { api, .. } if matches!(window.label(), "main" | "widget") => {
                 api.prevent_close();
                 let _ = window.hide();
             }
@@ -445,6 +519,7 @@ pub fn run() {
             connect,
             set_charge_power,
             open_settings,
+            open_main,
             app_version
         ])
         .run(tauri::generate_context!())

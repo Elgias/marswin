@@ -179,6 +179,7 @@ $("charge-form").addEventListener("submit", async (e) => {
   }
   const button = $<HTMLButtonElement>("charge-apply");
   button.disabled = true;
+  toast(t("chargeSending"));
   try {
     applySettings(await api.setChargePower(power));
     input.blur();

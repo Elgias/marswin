@@ -1,0 +1,113 @@
+.widget {
+  padding: 30px 28px 0;
+}
+
+.widget-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.widget .soc {
+  flex: 1;
+  height: 42px;
+  font-size: 41px;
+  line-height: 1;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+}
+
+/* Icons sit higher than the digits in the design: 20 px expand, 18 px close. */
+.widget .icon-btn {
+  width: 40px;
+  height: 36px;
+  margin-top: -6px;
+}
+
+.widget .icon-btn:last-child {
+  margin-right: -3px;
+}
+
+.widget .icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.widget #close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.widget .bar {
+  margin-top: 23px;
+  height: 41px;
+  border-radius: 10px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.widget .bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--green);
+}
+
+.ready .widget .bar-fill {
+  transition: width 0.6s ease;
+}
+
+.widget-meta {
+  margin-top: 19px;
+  display: flex;
+  align-items: center;
+  gap: 38px;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.widget-meta .flow {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.widget-meta .flow svg {
+  width: 10px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.widget-meta .status {
+  margin-left: auto;
+}
+
+.status[data-flow="discharging"] {
+  color: var(--orange);
+}
+
+.status[data-flow="charging"] {
+  color: var(--green);
+}
+
+.status[data-flow="idle"],
+.status[data-flow="none"] {
+  color: var(--muted);
+}
+
+.status[data-flow="offline"] {
+  color: var(--red);
+}
+
+.stale .soc {
+  color: var(--muted);
+}
+
+.stale .bar-fill {
+  opacity: 0.4;
+}

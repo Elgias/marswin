@@ -2,30 +2,23 @@ import "./styles.css";
 import "./main.css";
 import { api, fitZoom, onSettings, onSnapshot, toast, win, type Settings, type Snapshot } from "./api";
 import { errorText, setLang, t, translatePage } from "./i18n";
+import { barWidth, percent, statusOf, watts } from "./view";
 
 const $ = (id: string) => document.getElementById(id)!;
 
 let settings: Settings | null = null;
 let snapshot: Snapshot | null = null;
 
-const watts = (w: number | null) => (w == null ? "—" : `${Math.round(w)} W`);
 const kwh = (wh: number | null) => (wh == null ? "—" : (wh / 1000).toFixed(1));
-
-function statusOf(s: Snapshot): { text: string; flow: string } {
-  if (!settings?.device) return { text: t("noDevice"), flow: "none" };
-  if (!s.online) return s.error ? { text: t("offline"), flow: "offline" } : { text: t("connecting"), flow: "none" };
-  return { text: t(s.flow), flow: s.flow };
-}
 
 function render(): void {
   const s = snapshot;
   if (!s) return;
-  const soc = s.soc;
-  $("soc").textContent = soc == null ? "—" : `${soc.toFixed(1)}%`;
-  ($("bar") as HTMLDivElement).style.width = `${Math.max(0, Math.min(100, soc ?? 0))}%`;
+  $("soc").textContent = percent(s.soc);
+  $("bar").style.width = barWidth(s.soc);
   $("energy").textContent = `${kwh(s.energyWh)} / ${kwh(s.ratedWh)} kWh`;
 
-  const status = statusOf(s);
+  const status = statusOf(s, !!settings?.device);
   $("status").textContent = status.text;
   $("status").dataset.flow = status.flow;
   // Without a link the last values are kept but dimmed.
