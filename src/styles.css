@@ -102,6 +102,42 @@ button:disabled {
   fill: none;
 }
 
+/* Countdown ring to the next poll (pace.ts). */
+.pace[hidden] {
+  display: none;
+}
+
+.pace svg {
+  /* The ring has no corners, so it needs a bit more room than the line icons to look as big. */
+  width: 19px;
+  height: 19px;
+  transform: rotate(-90deg);
+}
+
+.pace circle {
+  fill: none;
+  stroke-width: 2;
+}
+
+.pace-track {
+  stroke: #232329;
+}
+
+.pace-arc {
+  stroke: var(--muted);
+  stroke-dasharray: 100;
+  stroke-linecap: round;
+}
+
+.pace:hover .pace-arc {
+  stroke: var(--text);
+}
+
+.pace.busy .pace-arc {
+  stroke: var(--green);
+  stroke-dashoffset: 72;
+}
+
 /* ------------------------------------------------------------ shared controls */
 
 .surface {

@@ -9,6 +9,9 @@
     <div class="frame">
       <header class="titlebar" data-tauri-drag-region>
         <h1>MarsWin</h1>
+        <button class="icon-btn pace" id="pace" hidden>
+          <svg viewBox="0 0 20 20"><circle class="pace-track" cx="10" cy="10" r="8.6" /><circle class="pace-arc" cx="10" cy="10" r="8.6" pathLength="100" /></svg>
+        </button>
         <button class="icon-btn" id="minimize" data-i18n-title="minimize">
           <svg viewBox="0 0 16 16"><path d="M1.5 8h13" /></svg>
         </button>
@@ -17,7 +20,7 @@
         </button>
       </header>
 
-      <main class="dash">
+      <main class="dash" data-stagger>
         <div class="soc" id="soc">—</div>
         <div class="bar"><div class="bar-fill" id="bar"></div></div>
         <div class="bar-meta">
@@ -25,7 +28,7 @@
           <span class="status" id="status"></span>
         </div>
 
-        <div class="cards">
+        <div class="cards" data-stagger>
           <div class="card surface">
             <span class="card-label muted" data-i18n="input"></span>
             <span class="card-value" id="input">—</span>

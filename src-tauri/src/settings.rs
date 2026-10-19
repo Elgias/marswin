@@ -1,5 +1,22 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::time::Duration;
+
+/// `refresh_sec` value for adaptive polling.
+pub const AUTO: u32 = 0;
+
+/// Adaptive poll interval, after marstip: a quick device is polled often, a slow or silent one is left alone.
+/// `answer` is how long the status calls took, or `None` when the device did not answer.
+pub fn auto_refresh(answer: Option<Duration>) -> Duration {
+    let secs = match answer.map(|d| d.as_millis()) {
+        None => 30,
+        Some(ms) if ms < 500 => 3,
+        Some(ms) if ms < 2000 => 5,
+        Some(ms) if ms < 5000 => 10,
+        Some(_) => 30,
+    };
+    Duration::from_secs(secs)
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DeviceRef {
@@ -13,6 +30,7 @@ pub struct DeviceRef {
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub lang: String,
+    /// 0 picks the interval from how fast the device answers (see `auto_refresh`).
     pub refresh_sec: u32,
     pub mode_check_sec: u32,
     pub timeout_sec: u32,
@@ -25,7 +43,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             lang: "uk".into(),
-            refresh_sec: 30,
+            refresh_sec: AUTO,
             mode_check_sec: 60,
             timeout_sec: 5,
             device: None,
@@ -84,9 +102,37 @@ impl Settings {
         if !matches!(self.lang.as_str(), "uk" | "en") {
             self.lang = "uk".into();
         }
-        self.refresh_sec = self.refresh_sec.clamp(2, 3600);
+        if self.refresh_sec != AUTO {
+            self.refresh_sec = self.refresh_sec.clamp(2, 3600);
+        }
         self.mode_check_sec = self.mode_check_sec.clamp(5, 86400);
         self.timeout_sec = self.timeout_sec.clamp(1, 30);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn auto_refresh_follows_answer_time() {
+        let ms = |n| Some(Duration::from_millis(n));
+        assert_eq!(auto_refresh(ms(120)).as_secs(), 3);
+        assert_eq!(auto_refresh(ms(500)).as_secs(), 5);
+        assert_eq!(auto_refresh(ms(1999)).as_secs(), 5);
+        assert_eq!(auto_refresh(ms(2000)).as_secs(), 10);
+        assert_eq!(auto_refresh(ms(6000)).as_secs(), 30);
+        assert_eq!(auto_refresh(None).as_secs(), 30);
+    }
+
+    #[test]
+    fn auto_survives_sanitizing() {
+        let mut s = Settings::default();
+        assert_eq!(s.refresh_sec, AUTO);
+        s.apply(SettingsPatch { lang: None, refresh_sec: Some(1), mode_check_sec: None, timeout_sec: None });
+        assert_eq!(s.refresh_sec, 2);
+        s.apply(SettingsPatch { lang: None, refresh_sec: Some(AUTO), mode_check_sec: None, timeout_sec: None });
+        assert_eq!(s.refresh_sec, AUTO);
     }
 }

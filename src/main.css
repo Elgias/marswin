@@ -29,11 +29,6 @@
   background: var(--green);
 }
 
-/* Animate only later updates, not the first fill. */
-.ready .bar-fill {
-  transition: width 0.6s ease;
-}
-
 .bar-meta {
   margin-top: 15px;
   display: flex;

@@ -1,9 +1,11 @@
 import "./styles.css";
 import "./settings.css";
+import "./motion.css";
 import {
   api,
   fitZoom,
   onAutostart,
+  onFade,
   onSettings,
   onSnapshot,
   toast,
@@ -14,11 +16,12 @@ import {
   type Snapshot,
 } from "./api";
 import { errorText, seconds, setLang, t, translatePage } from "./i18n";
+import { enter, leave, swap } from "./motion";
 import { Select } from "./select";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const REFRESH = [5, 10, 15, 30, 60];
+const REFRESH = [0, 5, 10, 15, 30, 60]; // 0 = adaptive
 const MODE_CHECK = [30, 60, 300, 600, 1800];
 const TIMEOUT = [2, 3, 5, 10];
 const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
@@ -27,6 +30,7 @@ let settings: Settings;
 let snapshot: Snapshot | null = null;
 let found: Found[] = [];
 let scanning = false;
+let shownList = "";
 
 const save = (patch: Parameters<typeof api.saveSettings>[0]) =>
   api.saveSettings(patch).then(applySettings, (e) => toast(t("failed", { e: errorText(e) }), true));
@@ -48,7 +52,10 @@ function renderSelects(): void {
     settings.lang,
   );
   const secs = (list: number[]) => list.map((n) => ({ value: n, label: seconds(n) }));
-  refreshSelect.setOptions(secs(REFRESH), settings.refreshSec);
+  refreshSelect.setOptions(
+    REFRESH.map((n) => ({ value: n, label: n === 0 ? t("auto") : seconds(n) })),
+    settings.refreshSec,
+  );
   modeSelect.setOptions(secs(MODE_CHECK), settings.modeCheckSec);
   timeoutSelect.setOptions(secs(TIMEOUT), settings.timeoutSec);
 }
@@ -80,6 +87,13 @@ function renderDevices(): void {
   const list = [...found];
   if (settings?.device && !list.some(isCurrent)) list.unshift(settings.device);
   for (const d of list) box.append(deviceCard(d));
+  // A new set of devices rises into place; a re-render of the same set stays still.
+  const key = list.map((d) => `${d.ip}:${d.port}`).join() + (list.length ? "" : scanning);
+  box.classList.toggle("appear", key !== shownList);
+  if (key !== shownList) {
+    box.querySelectorAll<HTMLElement>(":scope > *").forEach((c, i) => c.style.setProperty("--i", String(i)));
+    shownList = key;
+  }
   // While a scan runs over a non-empty list, the spinning icon is the only hint.
   if (list.length === 0) {
     const note = document.createElement("div");
@@ -93,10 +107,10 @@ function renderConnection(): void {
   const s = snapshot;
   const dev = s?.device ?? settings?.device ?? null;
   const live = s?.online ? s : null;
-  $("c-ssid").textContent = live?.wifi?.ssid ?? "—";
-  $("c-rssi").textContent = live?.wifi?.rssi == null ? "—" : `${live.wifi.rssi} dBm`;
-  $("c-ip").textContent = live?.wifi?.ip ?? dev?.ip ?? "—";
-  $("c-device").textContent = dev ? [dev.name ?? "Marstek", dev.ver == null ? "" : `v${dev.ver}`].join(" ").trim() : "—";
+  swap($("c-ssid"), live?.wifi?.ssid ?? "—");
+  swap($("c-rssi"), live?.wifi?.rssi == null ? "—" : `${live.wifi.rssi} dBm`);
+  swap($("c-ip"), live?.wifi?.ip ?? dev?.ip ?? "—");
+  swap($("c-device"), dev ? [dev.name ?? "Marstek", dev.ver == null ? "" : `v${dev.ver}`].join(" ").trim() : "—");
 }
 
 function applySettings(next: Settings): void {
@@ -142,7 +156,8 @@ async function connect(ip: string, port: number): Promise<void> {
   }
 }
 
-$("close").addEventListener("click", () => void win.close());
+$("close").addEventListener("click", () => void leave().then(win.close));
+onFade(enter, () => void leave());
 
 const autostart = $<HTMLInputElement>("autostart");
 autostart.addEventListener("change", async () => {
@@ -196,4 +211,5 @@ autostart.checked = autostartOn;
 snapshot = firstSnap;
 $("version").textContent = `v${version}`;
 applySettings(first);
+enter();
 void scan();

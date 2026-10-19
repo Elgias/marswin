@@ -3,12 +3,14 @@ mod marstek;
 mod settings;
 mod snapshot;
 
+use serde::Serialize;
 use serde_json::{json, Value};
 use settings::{DeviceRef, Settings, SettingsPatch};
 use snapshot::{Flow, Snapshot};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -36,6 +38,39 @@ struct Shared {
     wake: Notify,
     /// Makes the next poll also read mode, Wi-Fi and device info.
     full_poll: AtomicBool,
+    pace: Mutex<Pace>,
+}
+
+/// Where the poller is now; the pages show it as the countdown ring.
+#[derive(Clone, Copy)]
+enum Pace {
+    /// No device selected.
+    Idle,
+    /// A poll is running.
+    Busy,
+    /// Sleeping until the next poll.
+    Wait { until: Instant, total: Duration },
+}
+
+#[derive(Serialize, Clone)]
+#[serde(tag = "state", rename_all = "camelCase", rename_all_fields = "camelCase")]
+enum PaceView {
+    Idle,
+    Busy,
+    Wait { left_ms: u64, total_ms: u64 },
+}
+
+impl Pace {
+    fn view(self) -> PaceView {
+        match self {
+            Pace::Idle => PaceView::Idle,
+            Pace::Busy => PaceView::Busy,
+            Pace::Wait { until, total } => PaceView::Wait {
+                left_ms: until.saturating_duration_since(Instant::now()).as_millis() as u64,
+                total_ms: total.as_millis() as u64,
+            },
+        }
+    }
 }
 
 impl Shared {
@@ -48,6 +83,11 @@ impl Shared {
         f(&mut s);
         s.save(&self.path)?;
         Ok(s.clone())
+    }
+
+    fn set_pace(&self, app: &AppHandle, pace: Pace) {
+        *self.pace.lock().unwrap() = pace;
+        let _ = app.emit("pace", pace.view());
     }
 
     fn poll_now(&self, full: bool) {
@@ -171,11 +211,55 @@ fn resize_to_fit(win: &WebviewWindow, center: bool) {
     }
 }
 
+// ---------------------------------------------------------------- fade
+
+/// How long a page plays its fade-out before the window hides; matches `leaving` in styles.css.
+const FADE_OUT: Duration = Duration::from_millis(160);
+
+/// Per window: bumped on every show and hide, so a late hide never undoes a newer show.
+/// The flag is true while the window fades out.
+static FADES: LazyLock<Mutex<HashMap<String, (u64, bool)>>> = LazyLock::new(Default::default);
+
+fn fade_step(win: &WebviewWindow, leaving: bool) -> u64 {
+    let mut fades = FADES.lock().unwrap();
+    let entry = fades.entry(win.label().to_string()).or_default();
+    *entry = (entry.0 + 1, leaving);
+    entry.0
+}
+
+/// Shown and not fading out.
+fn is_shown(win: &WebviewWindow) -> bool {
+    let leaving = FADES.lock().unwrap().get(win.label()).is_some_and(|f| f.1);
+    win.is_visible().unwrap_or(false) && !leaving
+}
+
+/// Shows the window; a hidden page first gets "enter" so it plays its entrance.
+fn reveal(win: &WebviewWindow) {
+    if !is_shown(win) {
+        let _ = win.emit_to(win.label(), "enter", ());
+    }
+    fade_step(win, false);
+    let _ = win.show();
+    let _ = win.unminimize();
+    let _ = win.set_focus();
+}
+
+/// Lets the page fade out, then hides the window.
+fn conceal(win: &WebviewWindow) {
+    let id = fade_step(win, true);
+    let _ = win.emit_to(win.label(), "leave", ());
+    let win = win.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(FADE_OUT).await;
+        if FADES.lock().unwrap().get(win.label()).is_some_and(|f| f.0 == id) {
+            let _ = win.hide();
+        }
+    });
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
+        reveal(&w);
     }
 }
 
@@ -199,8 +283,8 @@ fn build_widget(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 /// or hides it when it is already shown.
 fn toggle_widget(app: &AppHandle, click: PhysicalPosition<f64>) {
     let Some(win) = app.get_webview_window("widget") else { return };
-    if win.is_visible().unwrap_or(false) {
-        let _ = win.hide();
+    if is_shown(&win) {
+        conceal(&win);
         return;
     }
     let monitor = app
@@ -224,15 +308,12 @@ fn toggle_widget(app: &AppHandle, click: PhysicalPosition<f64>) {
     let edge = fit::taskbar_edge(rect(*monitor.position(), *monitor.size()), work, click);
     let (x, y) = fit::widget_position(edge, work, (size.width as i32, size.height as i32), click, margin);
     let _ = win.set_position(PhysicalPosition::new(x, y));
-    let _ = win.show();
-    let _ = win.set_focus();
+    reveal(&win);
 }
 
 fn show_settings(app: &AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("settings") {
-        let _ = w.show();
-        let _ = w.unminimize();
-        let _ = w.set_focus();
+        reveal(&w);
         return Ok(());
     }
     let title = tr(&app.state::<Shared>().settings().lang, "settings");
@@ -260,21 +341,30 @@ fn publish(app: &AppHandle, snap: Snapshot) {
     refresh_tray(app);
 }
 
-async fn poll_once(dev: &DeviceRef, wait: Duration, full: bool, prev: Snapshot, last_mode: &mut Value) -> Snapshot {
+/// Returns the new snapshot and how long the two status calls took (`None` when the device did not answer).
+async fn poll_once(
+    dev: &DeviceRef,
+    wait: Duration,
+    full: bool,
+    prev: Snapshot,
+    last_mode: &mut Value,
+) -> (Snapshot, Option<Duration>) {
     let call = |method: &'static str, params: Value| marstek::call(&dev.ip, dev.port, method, params, wait);
     let mut snap = prev;
     snap.device.get_or_insert_with(|| dev.clone());
 
+    let started = Instant::now();
     let bat = match call("Bat.GetStatus", json!({ "id": 0 })).await {
         Ok(v) => v,
         Err(e) => {
             // The device is unreachable; skip the other calls instead of waiting out each timeout.
             snap.online = false;
             snap.error = Some(e);
-            return snap;
+            return (snap, None);
         }
     };
     let es = call("ES.GetStatus", json!({ "id": 0 })).await.unwrap_or(Value::Null);
+    let answer = started.elapsed();
     if full {
         if let Ok(m) = call("ES.GetMode", json!({ "id": 0 })).await {
             snap.apply_mode(&m);
@@ -291,7 +381,7 @@ async fn poll_once(dev: &DeviceRef, wait: Duration, full: bool, prev: Snapshot, 
     snap.apply_power(&es, last_mode);
     snap.online = true;
     snap.error = None;
-    snap
+    (snap, Some(answer))
 }
 
 async fn poller(app: AppHandle) {
@@ -299,8 +389,10 @@ async fn poller(app: AppHandle) {
     let mut last_full: Option<Instant> = None;
     let mut last_mode = Value::Null;
     loop {
+        let mut answer = None;
         let s = shared.settings();
         if let Some(dev) = s.device.clone() {
+            shared.set_pace(&app, Pace::Busy);
             let mode_every = Duration::from_secs(s.mode_check_sec.into());
             let full = shared.full_poll.swap(false, Ordering::SeqCst)
                 || last_full.is_none_or(|t| t.elapsed() >= mode_every);
@@ -312,7 +404,8 @@ async fn poller(app: AppHandle) {
                 Snapshot::default()
             };
             let wait = Duration::from_secs(s.timeout_sec.into());
-            let snap = poll_once(&dev, wait, full, prev, &mut last_mode).await;
+            let (snap, took) = poll_once(&dev, wait, full, prev, &mut last_mode).await;
+            answer = took;
             if full && snap.online {
                 last_full = Some(Instant::now());
             } else if full {
@@ -332,7 +425,15 @@ async fn poller(app: AppHandle) {
         } else {
             publish(&app, Snapshot::default());
         }
-        let refresh = Duration::from_secs(shared.settings().refresh_sec.into());
+        let refresh = match shared.settings().refresh_sec {
+            settings::AUTO => settings::auto_refresh(answer),
+            n => Duration::from_secs(n.into()),
+        };
+        let pace = match shared.settings().device {
+            Some(_) => Pace::Wait { until: Instant::now() + refresh, total: refresh },
+            None => Pace::Idle,
+        };
+        shared.set_pace(&app, pace);
         tokio::select! {
             _ = tokio::time::sleep(refresh) => {}
             _ = shared.wake.notified() => {}
@@ -350,6 +451,17 @@ fn get_settings(shared: State<'_, Shared>) -> Settings {
 #[tauri::command]
 fn get_snapshot(shared: State<'_, Shared>) -> Snapshot {
     shared.snapshot.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn get_pace(shared: State<'_, Shared>) -> PaceView {
+    shared.pace.lock().unwrap().view()
+}
+
+/// The countdown ring was clicked: poll now instead of waiting.
+#[tauri::command]
+fn refresh_now(shared: State<'_, Shared>) {
+    shared.poll_now(false);
 }
 
 #[tauri::command]
@@ -414,6 +526,12 @@ fn open_main(app: AppHandle) {
     show_main(&app);
 }
 
+/// Fades the calling window out and hides it (the page's × and ⤢ buttons).
+#[tauri::command]
+fn hide_window(window: WebviewWindow) {
+    conceal(&window);
+}
+
 #[tauri::command]
 fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
@@ -448,6 +566,7 @@ pub fn run() {
                 snapshot: Mutex::new(Snapshot::default()),
                 wake: Notify::new(),
                 full_poll: AtomicBool::new(true),
+                pace: Mutex::new(Pace::Idle),
             });
             let _ = app.state::<Shared>().update(|s| s.autostart_initialized = true);
 
@@ -498,7 +617,9 @@ pub fn run() {
             // Closing the main window or the widget keeps MarsWin in the tray.
             WindowEvent::CloseRequested { api, .. } if matches!(window.label(), "main" | "widget") => {
                 api.prevent_close();
-                let _ = window.hide();
+                if let Some(w) = window.app_handle().get_webview_window(window.label()) {
+                    conceal(&w);
+                }
             }
             // Moved to a monitor with other scaling or size: fit it again.
             WindowEvent::ScaleFactorChanged { .. } => {
@@ -514,6 +635,9 @@ pub fn run() {
             save_settings,
             discover,
             connect,
+            hide_window,
+            get_pace,
+            refresh_now,
             open_settings,
             open_main,
             get_autostart,

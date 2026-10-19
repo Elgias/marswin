@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export type Lang = "uk" | "en";
 export type Flow = "idle" | "charging" | "discharging";
@@ -42,16 +43,28 @@ export interface Found {
   ver: number | null;
 }
 
+/** Poller state for the countdown ring (lib.rs, Pace). */
+export type Pace = { state: "idle" } | { state: "busy" } | { state: "wait"; leftMs: number; totalMs: number };
+
 export type SettingsPatch = Partial<Pick<Settings, "lang" | "refreshSec" | "modeCheckSec" | "timeoutSec">>;
 
 /** Outside Tauri (plain `npm run dev` in a browser) the app runs on mock data. */
 const inTauri = "__TAURI_INTERNALS__" in window;
 
+// MarsWin is an app, not a web page: no browser menu on right click, no reload, print or find.
+if (inTauri) {
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+  document.addEventListener("keydown", (e) => {
+    const key = e.key.toLowerCase();
+    if (key === "f5" || key === "f3" || (e.ctrlKey && ["r", "p", "f", "g", "j", "u"].includes(key))) e.preventDefault();
+  });
+}
+
 const mockDevice: DeviceRef = { ip: "192.168.1.101", port: 30000, name: "VNSEM-0", ver: 301 };
 let mockAutostart = true;
 let mockSettings: Settings = {
   lang: "uk",
-  refreshSec: 30,
+  refreshSec: 0,
   modeCheckSec: 60,
   timeoutSec: 5,
   device: mockDevice,
@@ -91,6 +104,8 @@ async function mock<T>(cmd: string, args: Record<string, unknown> = {}): Promise
     case "set_autostart":
       mockAutostart = args.enabled as boolean;
       return mockAutostart as T;
+    case "get_pace":
+      return { state: "wait", leftMs: 20000, totalMs: 30000 } as T;
     case "app_version":
       return "1.0.0" as T;
     default:
@@ -113,6 +128,8 @@ export const api = {
   getAutostart: () => call<boolean>("get_autostart"),
   setAutostart: (enabled: boolean) => call<boolean>("set_autostart", { enabled }),
   appVersion: () => call<string>("app_version"),
+  getPace: () => call<Pace>("get_pace"),
+  refreshNow: () => call<void>("refresh_now"),
 };
 
 export function onSnapshot(cb: (s: Snapshot) => void): void {
@@ -124,13 +141,26 @@ export function onAutostart(cb: (enabled: boolean) => void): void {
   if (inTauri) void listen<boolean>("autostart", (e) => cb(e.payload));
 }
 
+export function onPace(cb: (p: Pace) => void): void {
+  if (inTauri) void listen<Pace>("pace", (e) => cb(e.payload));
+}
+
 export function onSettings(cb: (s: Settings) => void): void {
   if (inTauri) void listen<Settings>("settings", (e) => cb(e.payload));
 }
 
+/** Rust sends "enter" before it shows this window and "leave" before it hides it (lib.rs, fade). */
+export function onFade(enter: () => void, leave: () => void): void {
+  if (!inTauri) return;
+  const w = getCurrentWebviewWindow();
+  void w.listen("enter", enter);
+  void w.listen("leave", leave);
+}
+
 export const win = {
   minimize: () => (inTauri ? getCurrentWindow().minimize() : Promise.resolve()),
-  hide: () => (inTauri ? getCurrentWindow().hide() : Promise.resolve()),
+  /** Fades out, then hides (Rust sends "leave" first). */
+  hide: () => call<void>("hide_window"),
   close: () => (inTauri ? getCurrentWindow().close() : Promise.resolve()),
 };
 

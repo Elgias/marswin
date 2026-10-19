@@ -35,6 +35,11 @@
   height: 20px;
 }
 
+.widget .pace svg {
+  width: 22px;
+  height: 22px;
+}
+
 .widget #close svg {
   width: 18px;
   height: 18px;
@@ -54,12 +59,10 @@
   background: var(--green);
 }
 
-.ready .widget .bar-fill {
-  transition: width 0.6s ease;
-}
-
 .widget-meta {
   margin-top: 19px;
+  /* Equal-width digits: a changing value keeps its width. */
+  font-variant-numeric: tabular-nums;
   display: flex;
   align-items: center;
   gap: 38px;
@@ -69,13 +72,20 @@
 
 .widget-meta .flow {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 4px;
 }
 
+/* Room for "000 W" at least, so 0 W → 300 W does not push the next value; 4 digits may grow it. */
+.widget-meta .flow span {
+  display: inline-block;
+  min-width: calc(3ch + 1.5em);
+}
+
 .widget-meta .flow svg {
-  width: 10px;
-  height: 18px;
+  /* As tall as the digits, centred on them. */
+  width: 9px;
+  height: 16px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.6;

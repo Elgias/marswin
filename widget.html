@@ -6,9 +6,12 @@
     <title>MarsWin</title>
   </head>
   <body>
-    <div class="frame widget" data-tauri-drag-region>
+    <div class="frame widget" data-tauri-drag-region data-stagger>
       <div class="widget-head" data-tauri-drag-region>
         <div class="soc" id="soc">—</div>
+        <button class="icon-btn pace" id="pace" hidden>
+          <svg viewBox="0 0 20 20"><circle class="pace-track" cx="10" cy="10" r="8.6" /><circle class="pace-arc" cx="10" cy="10" r="8.6" pathLength="100" /></svg>
+        </button>
         <button class="icon-btn" id="expand" data-i18n-title="openWindow">
           <svg viewBox="2 2 16 16"><path d="M12 2.8h5.2V8M17.2 2.8l-6 6M8 17.2H2.8V12M2.8 17.2l6-6" /></svg>
         </button>
@@ -19,7 +22,7 @@
       <div class="bar"><div class="bar-fill" id="bar"></div></div>
       <div class="widget-meta" data-tauri-drag-region>
         <span class="muted flow"><svg viewBox="0 0 10 18"><path d="M5 17V1.5M1 5.5l4-4 4 4" /></svg><span id="input">—</span></span>
-        <span class="muted flow"><svg viewBox="0 0 10 18"><path d="M5 1v15.5M1 12.5l4 4 4-4" /></svg><span id="output">—</span></span>
+        <span class="muted flow out"><svg viewBox="0 0 10 18"><path d="M5 1v15.5M1 12.5l4 4 4-4" /></svg><span id="output">—</span></span>
         <span class="status" id="status"></span>
       </div>
     </div>

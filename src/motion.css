@@ -1,0 +1,207 @@
+/* Motion. Short and eased, never in the way; off when Windows asks for less motion. */
+
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+/* ------------------------------------------------------------ window entrance and exit */
+
+.entering .frame {
+  animation: fade-in 0.28s var(--ease-out) both;
+}
+
+.entering [data-stagger] > * {
+  animation: rise 0.5s var(--ease-out) both;
+  animation-delay: calc(60ms + var(--i, 0) * 45ms);
+}
+
+.entering [data-stagger] > [data-stagger] {
+  animation: none;
+}
+
+.frame {
+  transition:
+    opacity 0.15s ease-in,
+    transform 0.15s ease-in;
+}
+
+.leaving .frame {
+  opacity: 0;
+  transform: scale(0.985);
+}
+
+/* ------------------------------------------------------------ battery bar */
+
+.bar-fill {
+  position: relative;
+  overflow: hidden;
+  transition:
+    width 0.9s var(--ease-out),
+    opacity 0.4s;
+}
+
+/* A soft light runs along the bar in the direction the energy flows. */
+.bar-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.22) 50%, transparent 100%) no-repeat;
+  background-size: 45% 100%;
+  transition: opacity 0.6s;
+}
+
+.bar-fill[data-flow="charging"]::after,
+.bar-fill[data-flow="discharging"]::after {
+  opacity: 1;
+  animation: sweep 2.6s ease-in-out infinite;
+}
+
+.bar-fill[data-flow="discharging"]::after {
+  animation-direction: reverse;
+}
+
+@keyframes sweep {
+  from {
+    background-position: -120% 0;
+  }
+  to {
+    background-position: 220% 0;
+  }
+}
+
+/* ------------------------------------------------------------ live values */
+
+.soc,
+.card-value,
+.status {
+  transition: color 0.4s;
+}
+
+/* The widget arrow of the active flow drifts gently in its direction. */
+.flow.active svg {
+  animation: drift-up 1.8s ease-in-out infinite;
+}
+
+.flow.active.out svg {
+  animation-name: drift-down;
+}
+
+@keyframes drift-up {
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes drift-down {
+  50% {
+    transform: translateY(2px);
+  }
+}
+
+/* ------------------------------------------------------------ countdown ring */
+
+.pace .pace-arc {
+  transition: stroke 0.3s;
+}
+
+.pace.busy svg {
+  animation: pace-spin 0.9s linear infinite;
+}
+
+@keyframes pace-spin {
+  from {
+    transform: rotate(-90deg);
+  }
+  to {
+    transform: rotate(270deg);
+  }
+}
+
+/* ------------------------------------------------------------ controls */
+
+.icon-btn,
+.btn,
+.select-button,
+.device,
+.rescan {
+  transition:
+    background-color 0.18s,
+    border-color 0.18s,
+    transform 0.12s;
+}
+
+.btn:not(:disabled):active,
+.device:active,
+.select-button:active {
+  transform: scale(0.985);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.card {
+  border: 1px solid transparent;
+  transition: border-color 0.25s;
+}
+
+.card:hover {
+  border-color: var(--border);
+}
+
+.select.open .select-list {
+  animation: pop 0.16s var(--ease-out);
+  transform-origin: top right;
+}
+
+.select-list li {
+  transition: background-color 0.12s;
+}
+
+.devices.appear > * {
+  animation: rise 0.4s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+
+.toast {
+  transform: translate(-50%, 10px);
+  transition:
+    opacity 0.22s,
+    transform 0.3s var(--ease-out);
+}
+
+.toast.show {
+  transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

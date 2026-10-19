@@ -9,6 +9,13 @@ A small Windows app that monitors a Marstek battery (Venus C/D/E, Venus E mini) 
 - Charge level, energy (kWh), input/output power, temperature, operating mode.
 - Device search on the local network (UDP broadcast), or manual IP and port.
 - Read-only: MarsWin shows data and never changes the device's mode.
+- Adaptive refresh (default "Auto", after marstip): the next poll waits 3 s when the device
+  answered in under 0.5 s, 5 s under 2 s, 10 s under 5 s, otherwise 30 s; 30 s after no answer.
+  A fixed 5–60 s interval can be picked in Settings instead.
+- Countdown ring by the window buttons (main window and widget): the arc runs out until the
+  next poll and spins while a poll runs. Hover shows the seconds left; a click polls at once.
+- Gentle motion: numbers count to new values, the bar fills smoothly with a light running in the
+  direction of the energy flow, windows fade in and out. Off when Windows asks for less motion.
 - Tray icon with charge level in the tooltip. **Left click** shows a small widget (charge, bar,
   in/out power, status) next to the taskbar: above a bottom taskbar, below a top one, beside a
   side one, centred on the tray icon. ⤢ opens the main window, × hides it.
@@ -50,6 +57,8 @@ cd src-tauri && cargo test
 | `src-tauri/src/fit.rs` | Window sizes per screen (1080p, 1440p, 4K, any scaling) |
 | `src/main.ts`, `src/settings.ts`, `src/widget.ts` | Main window, settings window, tray widget |
 | `src/view.ts` | Formatting and status shared by the main window and the widget |
+| `src/motion.ts`, `src/motion.css` | Rolling numbers, text swaps, window entrance and exit |
+| `src/pace.ts` | Countdown ring to the next poll |
 
 ## Data mapping
 
@@ -88,3 +97,9 @@ cd src-tauri && cargo test
   out in the documented order. A test in `marstek.rs` pins it.
 - **If mode control comes back:** `ES.SetMode` is slow and lossy; the Home Assistant
   integration waits 15 s and retries 3 times. (MarsWin 1.1.0 had this; 1.2.0 removed charging.)
+- **Entrance animations and dropdowns:** an element that keeps a finished CSS animation
+  (`animation-fill-mode: both`) stays in its own layer, so an open dropdown slides under the
+  next row. `motion.ts` drops the `entering` class once the entrance is over.
+- **Hiding a window:** the page must fade out before Rust hides the window. Otherwise Windows
+  shows the last frame for a moment the next time the window opens. Rust sends `leave`, waits
+  160 ms, then hides (`conceal` in `lib.rs`).
