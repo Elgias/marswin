@@ -45,6 +45,46 @@ const refreshSelect = new Select<number>($("refresh"), (refreshSec) => void save
 const modeSelect = new Select<number>($("mode-check"), (modeCheckSec) => void save({ modeCheckSec }));
 const timeoutSelect = new Select<number>($("timeout"), (timeoutSec) => void save({ timeoutSec }));
 
+/** Low-charge notices: a percent field (saved on Enter or when it loses focus) and an on/off check. */
+const LEVELS = [
+  { field: "warn-pct", check: "warn-on", pct: "warnPct", on: "warnOn" },
+  { field: "critical-pct", check: "critical-on", pct: "criticalPct", on: "criticalOn" },
+] as const;
+
+function renderLevels(): void {
+  for (const l of LEVELS) {
+    const field = $<HTMLInputElement>(l.field);
+    // Never overwrite what the user is typing.
+    if (document.activeElement !== field) field.value = String(settings[l.pct]);
+    $(l.check).setAttribute("aria-checked", String(settings[l.on]));
+    field.parentElement!.classList.toggle("off", !settings[l.on]);
+  }
+}
+
+for (const l of LEVELS) {
+  const field = $<HTMLInputElement>(l.field);
+  field.addEventListener("input", () => (field.value = field.value.replace(/\D/g, "")));
+  field.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") field.value = String(settings[l.pct]);
+    if (e.key === "Enter" || e.key === "Escape") field.blur();
+  });
+  field.addEventListener("change", () => {
+    const n = Number(field.value);
+    if (field.value === "" || n < 1 || n > 99) {
+      toast(t("badPercent"), true);
+      field.value = String(settings[l.pct]);
+    } else if (n !== settings[l.pct]) {
+      void save({ [l.pct]: n });
+    }
+  });
+  $(l.check).addEventListener("click", () => {
+    const on = !settings[l.on];
+    $(l.check).setAttribute("aria-checked", String(on));
+    // On a failed save the check returns to the stored state.
+    void save({ [l.on]: on }).then(renderLevels);
+  });
+}
+
 const isCurrent = (d: { ip: string; port: number }) =>
   settings?.device?.ip === d.ip && settings.device.port === d.port;
 
@@ -126,6 +166,7 @@ function applySettings(next: Settings): void {
     translatePage();
   }
   renderSelects();
+  renderLevels();
   renderDevices();
   renderConnection();
   renderUpdate();

@@ -3,9 +3,9 @@ import "./widget.css";
 import "./motion.css";
 import { api, fitZoom, onFade, onSettings, onSnapshot, win, type Settings, type Snapshot } from "./api";
 import { setLang, translatePage } from "./i18n";
-import { enter, leave, roll, seed, swap } from "./motion";
+import { enter, leave, roll, seed } from "./motion";
 import { PaceRing } from "./pace";
-import { barWidth, percent, statusOf, watts } from "./view";
+import { barWidth, percent, showStatus, statusOf, watts } from "./view";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -23,8 +23,7 @@ function render(): void {
   $("input").parentElement!.classList.toggle("active", live && (s.inputW ?? 0) > 0);
   $("output").parentElement!.classList.toggle("active", live && (s.outputW ?? 0) > 0);
   const status = statusOf(s, !!settings?.device);
-  swap($("status"), status.text);
-  $("status").dataset.flow = status.flow;
+  showStatus($("status"), status);
   $("bar").dataset.flow = status.flow;
   document.body.classList.toggle("stale", !s.online);
 }

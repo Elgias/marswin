@@ -123,6 +123,69 @@ h2 {
   border-color: var(--green);
 }
 
+/* Notice level: a percent field and a check that turns the notice on or off. */
+.level {
+  flex: none;
+  display: flex;
+  gap: 12px;
+}
+
+.level-pct {
+  width: 72px;
+  padding: 0;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.18s;
+}
+
+.level-on {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  transition:
+    background-color 0.18s,
+    transform 0.12s;
+}
+
+.level-on:hover {
+  background: #16161a;
+}
+
+.level-on:active {
+  transform: scale(0.94);
+}
+
+.level-on svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition:
+    opacity 0.18s,
+    transform 0.18s;
+}
+
+/* Off: an empty box, and the level dims. */
+.level-on[aria-checked="false"] {
+  background: var(--field);
+}
+
+.level-on[aria-checked="false"] svg {
+  opacity: 0;
+  transform: scale(0.6);
+}
+
+.level.off .level-pct {
+  color: var(--muted);
+}
+
 .switch:checked::after {
   transform: translateX(28px);
   background: var(--text);

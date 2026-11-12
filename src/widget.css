@@ -93,8 +93,11 @@
   stroke-linejoin: round;
 }
 
+/* Two points below the power figures, so "Залишилось 8г 39хв" fits beside them. */
 .widget-meta .status {
   margin-left: auto;
+  font-size: 20px;
+  white-space: nowrap;
 }
 
 .status[data-flow="discharging"] {

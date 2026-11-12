@@ -9,6 +9,13 @@ A small Windows app that monitors a Marstek battery (Venus C/D/E, Venus E mini) 
 - Charge level, energy (kWh), input/output power, temperature, operating mode.
 - Device search on the local network (UDP broadcast), or manual IP and port.
 - Read-only: MarsWin shows data and never changes the device's mode.
+- Time left on battery: from the third poll in a row that discharges, "Discharging" changes to
+  "8h 39m left" (main window, widget, tray tooltip). Formula: remaining energy (Wh) ÷ mean
+  discharge power of the last 3–10 polls. Charge or idle starts the count again.
+- Low-charge notices: a one-line notice by the tray, "50% left" with a yellow sign (warning) or
+  "20% left" with a red sign (critical). It hides after 5 s or on ×, and never takes focus.
+  Each level shows once per discharge; it fires again after the charge rises 2 points above
+  it. Levels and on/off are in Settings → Notifications (default 50 % and 20 %, both on).
 - Adaptive refresh (default "Auto", after marstip): the next poll waits 3 s when the device
   answered in under 0.5 s, 5 s under 2 s, 10 s under 5 s, otherwise 30 s; 30 s after no answer.
   A fixed 5–60 s interval can be picked in Settings instead.
@@ -84,6 +91,8 @@ and a `latest.json` over local HTTP, and start MarsWin with `MARSWIN_UPDATE_URL`
 | `src-tauri/src/lib.rs` | Polling loop, commands, windows, tray, autostart |
 | `src-tauri/src/fit.rs` | Window sizes per screen (1080p, 1440p, 4K, any scaling) |
 | `src/main.ts`, `src/settings.ts`, `src/widget.ts` | Main window, settings window, tray widget |
+| `src/notice.ts`, `notice.html` | Low-charge notice window (made on the first notice, then kept hidden) |
+| `src-tauri/src/alerts.rs` | When a low-charge notice fires (levels, once per discharge, re-arm) |
 | `src/view.ts` | Formatting and status shared by the main window and the widget |
 | `src/motion.ts`, `src/motion.css` | Rolling numbers, text swaps, window entrance and exit |
 | `src/pace.ts` | Countdown ring to the next poll |
@@ -97,6 +106,7 @@ and a `latest.json` over local HTTP, and start MarsWin with `MARSWIN_UPDATE_URL`
 | % and kWh | `Bat.GetStatus` `soc`, `bat_capacity`, `rated_capacity` |
 | Input / Output | `ES.GetStatus` `ongrid_power` (< 0 means from the grid) plus `offgrid_power` |
 | Charging / Discharging | `bat_power` sign when present, otherwise `ongrid_power` |
+| Time left | energy (Wh) ÷ mean of −`bat_power` (else output − input) over the last 3–10 polls (`Drain` in `snapshot.rs`) |
 | Temperature | `Bat.GetStatus` `bat_temp` |
 | Mode | `ES.GetMode` (read every "Mode check" interval) |
 | Connection | `Wifi.GetStatus`, `Marstek.GetDevice` |
@@ -118,8 +128,18 @@ and a `latest.json` over local HTTP, and start MarsWin with `MARSWIN_UPDATE_URL`
 - **Screen fit:** window size comes from `fit.rs` (0.72 of the design, at most 55 % of the
   work-area height). The page follows with CSS `zoom` (`fitZoom` in `api.ts`). Change the
   numbers there, not the CSS.
-- **Testing without a battery:** `npm run dev` gives mock data. For the full path, run a small
-  UDP emulator on another port (e.g. 30002) and set the device to `127.0.0.1:30002`.
+- **Testing without a battery:** `npm run dev` gives mock data (`?lang=en`, `?remaining=none`,
+  and `notice.html?level=critical` show other states). For the full path, run a small UDP
+  emulator on port 30002 **bound to `127.0.0.2`** and set the device to `127.0.0.2:30002`.
+  MarsWin binds `0.0.0.0` on the device port; an emulator on `127.0.0.1` at that port gets the
+  replies meant for MarsWin (the more specific bind wins), so every poll times out.
+- **Firewall prompt blocks all clicks:** a new exe (also a fresh `tauri dev` build) gets the
+  "Windows Security" firewall prompt. While it is open, a full-screen dim layer
+  (`Shell_SystemDim`) takes every click, so simulated clicks on any window do nothing.
+  Answer the prompt before click tests.
+- **Notice without focus:** the notice window is built with `focusable(false)`
+  (`WS_EX_NOACTIVATE`). tao's `focused(false)` acts only at creation; a later `show()` would
+  take focus from the app the user works in.
 - **Screenshots of the real window:** a PowerShell capture must be per-monitor DPI aware, or
   it gets scaled coordinates and crops the window.
 - **Key order in requests:** `serde_json` sorts object keys unless the `preserve_order` feature

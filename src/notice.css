@@ -1,0 +1,56 @@
+/* Low-charge notice: one line, sized like the widget (design 545 x 61). */
+
+.notice {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px 0 28px;
+}
+
+.notice-sign {
+  flex: none;
+  width: 23px;
+  height: 21px;
+}
+
+.sign-body {
+  fill: var(--orange);
+  stroke: var(--orange);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  transition:
+    fill 0.3s,
+    stroke 0.3s;
+}
+
+.notice[data-level="critical"] .sign-body {
+  fill: var(--red);
+  stroke: var(--red);
+}
+
+.sign-mark {
+  fill: none;
+  stroke: var(--bg);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.notice-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 24px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notice .icon-btn {
+  flex: none;
+}
+
+.notice .icon-btn svg {
+  width: 19px;
+  height: 19px;
+}

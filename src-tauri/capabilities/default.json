@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main and settings windows",
-  "windows": ["main", "settings", "widget"],
+  "description": "All MarsWin windows",
+  "windows": ["main", "settings", "widget", "notice"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",

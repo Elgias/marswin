@@ -17,14 +17,27 @@ pub struct Window {
 pub const MAIN: Window = Window { design: (565.0, 713.0), max_share: (0.5, 0.55) };
 pub const SETTINGS: Window = Window { design: (1128.0, 873.0), max_share: (0.9, 0.8) };
 pub const WIDGET: Window = Window { design: (545.0, 211.0), max_share: (0.4, 0.25) };
+/// The low-charge notice: as wide as the widget, one line high.
+pub const NOTICE_DESIGN: (f64, f64) = (545.0, 61.0);
+
+/// Design units to logical pixels for this window on a work area given in logical pixels.
+fn scale(win: &Window, area: (f64, f64)) -> f64 {
+    let (w, h) = win.design;
+    BASE_SCALE
+        .min(area.0 * win.max_share.0 / w)
+        .min(area.1 * win.max_share.1 / h)
+}
 
 /// Logical window size for a work area given in logical pixels.
 pub fn size(win: &Window, area: (f64, f64)) -> (f64, f64) {
-    let (w, h) = win.design;
-    let k = BASE_SCALE
-        .min(area.0 * win.max_share.0 / w)
-        .min(area.1 * win.max_share.1 / h);
-    ((w * k).round(), (h * k).round())
+    let k = scale(win, area);
+    ((win.design.0 * k).round(), (win.design.1 * k).round())
+}
+
+/// The notice takes the widget's scale, so the two match when they stand together.
+pub fn notice_size(area: (f64, f64)) -> (f64, f64) {
+    let k = scale(&WIDGET, area);
+    ((NOTICE_DESIGN.0 * k).round(), (NOTICE_DESIGN.1 * k).round())
 }
 
 /// A rectangle in physical px: x, y, width, height.
@@ -79,6 +92,28 @@ pub fn widget_position(edge: Edge, work: Rect, size: (i32, i32), click: (i32, i3
     }
 }
 
+/// Top-left corner for the low-charge notice: where the widget goes, or next to the widget
+/// when it is shown (above it over a bottom taskbar, below it under a top one, beside it
+/// next to a side one).
+pub fn notice_position(
+    edge: Edge,
+    work: Rect,
+    size: (i32, i32),
+    click: (i32, i32),
+    margin: i32,
+    widget: Option<Rect>,
+) -> (i32, i32) {
+    let Some((x, y, w, h)) = widget else {
+        return widget_position(edge, work, size, click, margin);
+    };
+    match edge {
+        Edge::Bottom => (x, y - margin - size.1),
+        Edge::Top => (x, y + h + margin),
+        Edge::Left => (x + w + margin, y),
+        Edge::Right => (x - margin - size.0, y),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,6 +163,32 @@ mod tests {
         let edge = taskbar_edge(mon, work, (-100, 1060));
         let (x, y) = widget_position(edge, work, (392, 152), (-100, 1060), 12);
         assert!(x >= -1920 && x + 392 <= 0 && y + 152 <= 1032, "{x},{y}");
+    }
+
+    #[test]
+    fn notice_takes_the_widget_place_when_alone() {
+        let work = (0, 0, 3840, 2088);
+        let size = (588, 66);
+        assert_eq!(notice_position(Edge::Bottom, work, size, (3600, 2120), 18, None), (3234, 2088 - 66 - 18));
+    }
+
+    #[test]
+    fn notice_stands_beside_a_shown_widget() {
+        let widget = (3234, 1842, 588, 228);
+        let size = (588, 66);
+        let work = (0, 0, 3840, 2088);
+        // Above the widget over a bottom taskbar, below it under a top one.
+        assert_eq!(notice_position(Edge::Bottom, work, size, (3600, 2120), 18, Some(widget)), (3234, 1842 - 18 - 66));
+        assert_eq!(notice_position(Edge::Top, work, size, (3600, 36), 18, Some(widget)), (3234, 1842 + 228 + 18));
+        assert_eq!(notice_position(Edge::Left, work, size, (40, 2000), 18, Some(widget)), (3234 + 588 + 18, 1842));
+        assert_eq!(notice_position(Edge::Right, work, size, (3800, 2000), 18, Some(widget)), (3234 - 18 - 588, 1842));
+    }
+
+    #[test]
+    fn notice_is_as_wide_as_the_widget() {
+        for area in [(2560.0, 1392.0), (1536.0, 816.0), (1280.0, 672.0)] {
+            assert_eq!(notice_size(area).0, size(&WIDGET, area).0, "{area:?}");
+        }
     }
 
     /// Work area in logical px: physical resolution / scaling, minus a 48 px taskbar.

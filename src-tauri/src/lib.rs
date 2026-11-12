@@ -1,13 +1,15 @@
+mod alerts;
 mod fit;
 mod marstek;
 mod settings;
 mod snapshot;
 mod update;
 
+use alerts::{Alerts, Notice};
 use serde::Serialize;
 use serde_json::{json, Value};
 use settings::{DeviceRef, Settings, SettingsPatch};
-use snapshot::{Flow, Snapshot};
+use snapshot::{Drain, Flow, Snapshot};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,6 +32,8 @@ const TRAY_ID: &str = "tray";
 const DISCOVER_WAIT: Duration = Duration::from_millis(2500);
 const LOG_FILE: &str = "marswin.log";
 const BG: tauri::window::Color = tauri::window::Color(9, 9, 11, 255);
+/// A low-charge notice hides by itself after this long.
+const NOTICE_FOR: Duration = Duration::from_secs(5);
 
 struct Shared {
     path: PathBuf,
@@ -40,6 +44,8 @@ struct Shared {
     /// Makes the next poll also read mode, Wi-Fi and device info.
     full_poll: AtomicBool,
     pace: Mutex<Pace>,
+    /// The latest low-charge notice; the notice page reads it when it loads.
+    notice: Mutex<Option<Notice>>,
 }
 
 /// Where the poller is now; the pages show it as the countdown ring.
@@ -119,20 +125,41 @@ fn tr(lang: &str, key: &str) -> &'static str {
     }
 }
 
+/// "Залишилось 8г 39хв" / "8h 39m left"; the same text as `statusOf` in view.ts.
+fn time_left(lang: &str, min: u32) -> String {
+    let (d, h, m) = (min / 1440, min % 1440 / 60, min % 60);
+    if lang == "en" {
+        let span = match min {
+            ..60 => format!("{m}m"),
+            ..1440 => format!("{h}h {m}m"),
+            _ => format!("{d}d {h}h"),
+        };
+        format!("{span} left")
+    } else {
+        let span = match min {
+            ..60 => format!("{m}хв"),
+            ..1440 => format!("{h}г {m}хв"),
+            _ => format!("{d}д {h}г"),
+        };
+        format!("Залишилось {span}")
+    }
+}
+
 fn tooltip(lang: &str, snap: &Snapshot, has_device: bool) -> String {
     let state = if !has_device {
         tr(lang, "nodevice").to_string()
     } else if !snap.online {
         tr(lang, "offline").to_string()
     } else {
-        let flow = match snap.flow {
-            Flow::Charging => tr(lang, "charging"),
-            Flow::Discharging => tr(lang, "discharging"),
-            Flow::Idle => tr(lang, "idle"),
+        let flow = match (snap.flow, snap.remaining_min) {
+            (Flow::Discharging, Some(min)) => time_left(lang, min),
+            (Flow::Discharging, None) => tr(lang, "discharging").to_string(),
+            (Flow::Charging, _) => tr(lang, "charging").to_string(),
+            (Flow::Idle, _) => tr(lang, "idle").to_string(),
         };
         match snap.soc {
             Some(soc) => format!("{soc:.0}% · {flow}"),
-            None => flow.to_string(),
+            None => flow,
         }
     };
     format!("MarsWin — {state}")
@@ -212,9 +239,16 @@ fn set_client_size(win: &WebviewWindow, w: f64, h: f64) {
     let _ = win.set_size(LogicalSize::new(w, h));
 }
 
+/// Logical client size of this window for a work area in logical px.
+fn client_size(label: &str, area: (f64, f64)) -> (f64, f64) {
+    match label {
+        "notice" => fit::notice_size(area),
+        _ => fit::size(fit_spec(label), area),
+    }
+}
+
 /// Sizes the window for the monitor it is on (see fit.rs); the page follows with CSS zoom.
 fn resize_to_fit(win: &WebviewWindow, center: bool) {
-    let spec = fit_spec(win.label());
     let monitor = match win.current_monitor() {
         Ok(Some(m)) => m,
         _ => match win.primary_monitor() {
@@ -223,7 +257,7 @@ fn resize_to_fit(win: &WebviewWindow, center: bool) {
         },
     };
     let area = monitor.work_area().size.to_logical::<f64>(monitor.scale_factor());
-    let (w, h) = fit::size(spec, (area.width, area.height));
+    let (w, h) = client_size(win.label(), (area.width, area.height));
     set_client_size(win, w, h);
     if center {
         let _ = win.center();
@@ -306,28 +340,116 @@ fn toggle_widget(app: &AppHandle, click: PhysicalPosition<f64>) {
         conceal(&win);
         return;
     }
+    let Some(d) = dock(app, &win, click) else { return };
+    let (x, y) = fit::widget_position(d.edge, d.work, d.size, d.at, d.margin);
+    let _ = win.set_position(PhysicalPosition::new(x, y));
+    reveal(&win);
+    // A notice on screen moves aside, so the two do not overlap.
+    if let Some(notice) = app.get_webview_window("notice").filter(is_shown) {
+        place_notice(app, &notice);
+    }
+}
+
+/// A window that stands next to the taskbar, sized for its monitor (physical px).
+struct Dock {
+    edge: fit::Edge,
+    work: fit::Rect,
+    size: (i32, i32),
+    at: (i32, i32),
+    margin: i32,
+}
+
+fn rect(p: PhysicalPosition<i32>, s: tauri::PhysicalSize<u32>) -> fit::Rect {
+    (p.x, p.y, s.width as i32, s.height as i32)
+}
+
+/// Sizes `win` for the monitor under `at` (the tray) and finds the taskbar edge there.
+fn dock(app: &AppHandle, win: &WebviewWindow, at: PhysicalPosition<f64>) -> Option<Dock> {
     let monitor = app
-        .monitor_from_point(click.x, click.y)
+        .monitor_from_point(at.x, at.y)
         .ok()
         .flatten()
-        .or_else(|| app.primary_monitor().ok().flatten());
-    let Some(monitor) = monitor else { return };
+        .or_else(|| app.primary_monitor().ok().flatten())?;
     let scale = monitor.scale_factor();
     let area = monitor.work_area();
     // Move onto the target monitor first, so the logical size uses its scaling.
-    let _ = win.set_position(area.position);
+    let here = win.current_monitor().ok().flatten().map(|m| *m.position());
+    if here != Some(*monitor.position()) {
+        let _ = win.set_position(area.position);
+    }
     let logical = area.size.to_logical::<f64>(scale);
-    let (w, h) = fit::size(&fit::WIDGET, (logical.width, logical.height));
-    set_client_size(&win, w, h);
+    let (w, h) = client_size(win.label(), (logical.width, logical.height));
+    set_client_size(win, w, h);
     let size = win.outer_size().unwrap_or_default();
-    let margin = (12.0 * scale) as i32;
-    let rect = |p: PhysicalPosition<i32>, s: tauri::PhysicalSize<u32>| (p.x, p.y, s.width as i32, s.height as i32);
     let work = rect(area.position, area.size);
-    let click = (click.x as i32, click.y as i32);
-    let edge = fit::taskbar_edge(rect(*monitor.position(), *monitor.size()), work, click);
-    let (x, y) = fit::widget_position(edge, work, (size.width as i32, size.height as i32), click, margin);
+    let at = (at.x as i32, at.y as i32);
+    Some(Dock {
+        edge: fit::taskbar_edge(rect(*monitor.position(), *monitor.size()), work, at),
+        work,
+        size: (size.width as i32, size.height as i32),
+        at,
+        margin: (12.0 * scale) as i32,
+    })
+}
+
+// ---------------------------------------------------------------- low-charge notice
+
+/// Centre of the tray icon; without one, the far corner of the primary work area.
+fn tray_point(app: &AppHandle) -> Option<PhysicalPosition<f64>> {
+    if let Some(r) = app.tray_by_id(TRAY_ID).and_then(|t| t.rect().ok().flatten()) {
+        // Windows gives the tray rect in physical px, so the scale here is not used.
+        let (p, s) = (r.position.to_physical::<f64>(1.0), r.size.to_physical::<f64>(1.0));
+        return Some(PhysicalPosition::new(p.x + s.width / 2.0, p.y + s.height / 2.0));
+    }
+    let monitor = app.primary_monitor().ok().flatten()?;
+    let (x, y, w, h) = rect(monitor.work_area().position, monitor.work_area().size);
+    Some(PhysicalPosition::new((x + w - 1) as f64, (y + h - 1) as f64))
+}
+
+/// Puts the notice next to the tray, or next to the widget when the widget is shown.
+fn place_notice(app: &AppHandle, win: &WebviewWindow) {
+    let Some(at) = tray_point(app) else { return };
+    let Some(d) = dock(app, win, at) else { return };
+    let widget = app
+        .get_webview_window("widget")
+        .filter(is_shown)
+        .and_then(|w| Some(rect(w.outer_position().ok()?, w.outer_size().ok()?)));
+    let (x, y) = fit::notice_position(d.edge, d.work, d.size, d.at, d.margin, widget);
     let _ = win.set_position(PhysicalPosition::new(x, y));
-    reveal(&win);
+}
+
+fn build_notice(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    let (w, h) = fit::NOTICE_DESIGN;
+    WebviewWindowBuilder::new(app, "notice", WebviewUrl::App("notice.html".into()))
+        .title("MarsWin")
+        .inner_size(w * fit::BASE_SCALE, h * fit::BASE_SCALE)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        // A notice must not take the keyboard from the app the user works in.
+        .focusable(false)
+        .focused(false)
+        .background_color(BG)
+        .visible(false)
+        .build()
+}
+
+/// Hands a notice to the notice page; the page draws it and calls `present_notice`.
+/// The window is made on the first notice and kept (hidden) after that.
+fn notify(app: &AppHandle, notice: Notice) {
+    *app.state::<Shared>().notice.lock().unwrap() = Some(notice.clone());
+    match app.get_webview_window("notice") {
+        Some(win) => {
+            let _ = win.emit_to("notice", "notice", notice);
+        }
+        // A new page reads the notice with `get_notice` when it loads.
+        None => {
+            let _ = build_notice(app);
+        }
+    }
 }
 
 fn show_settings(app: &AppHandle) -> Result<(), String> {
@@ -407,6 +529,8 @@ async fn poller(app: AppHandle) {
     let shared = app.state::<Shared>();
     let mut last_full: Option<Instant> = None;
     let mut last_mode = Value::Null;
+    let mut drain = Drain::default();
+    let mut alerts = Alerts::default();
     loop {
         let mut answer = None;
         let s = shared.settings();
@@ -420,10 +544,14 @@ async fn poller(app: AppHandle) {
                 prev
             } else {
                 last_mode = Value::Null;
+                drain = Drain::default();
+                alerts = Alerts::default();
                 Snapshot::default()
             };
             let wait = Duration::from_secs(s.timeout_sec.into());
-            let (snap, took) = poll_once(&dev, wait, full, prev, &mut last_mode).await;
+            let (mut snap, took) = poll_once(&dev, wait, full, prev, &mut last_mode).await;
+            // A missed answer keeps the count of discharge polls; the estimate comes back with the next answer.
+            snap.remaining_min = if snap.online { drain.update(&snap) } else { None };
             answer = took;
             if full && snap.online {
                 last_full = Some(Instant::now());
@@ -439,7 +567,11 @@ async fn poller(app: AppHandle) {
                         let _ = app.emit("settings", after);
                     }
                 }
+                let notice = alerts.check(&shared.settings(), &snap);
                 publish(&app, snap);
+                if let Some(n) = notice {
+                    notify(&app, n);
+                }
             }
         } else {
             publish(&app, Snapshot::default());
@@ -552,6 +684,26 @@ fn hide_window(window: WebviewWindow) {
 }
 
 #[tauri::command]
+fn get_notice(shared: State<'_, Shared>) -> Option<Notice> {
+    shared.notice.lock().unwrap().clone()
+}
+
+/// The notice page has drawn a notice: place it, show it without taking focus,
+/// and hide it after NOTICE_FOR unless it was closed or replaced by then.
+#[tauri::command]
+fn present_notice(app: AppHandle, window: WebviewWindow) {
+    place_notice(&app, &window);
+    let id = fade_step(&window, false);
+    let _ = window.show();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(NOTICE_FOR).await;
+        if FADES.lock().unwrap().get(window.label()).is_some_and(|f| f.0 == id) {
+            conceal(&window);
+        }
+    });
+}
+
+#[tauri::command]
 fn get_update() -> Option<update::UpdateInfo> {
     update::found()
 }
@@ -602,6 +754,7 @@ pub fn run() {
                 wake: Notify::new(),
                 full_poll: AtomicBool::new(true),
                 pace: Mutex::new(Pace::Idle),
+                notice: Mutex::new(None),
             });
             let _ = app.state::<Shared>().update(|s| s.autostart_initialized = true);
 
@@ -652,7 +805,7 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             // Closing the main window or the widget keeps MarsWin in the tray.
-            WindowEvent::CloseRequested { api, .. } if matches!(window.label(), "main" | "widget") => {
+            WindowEvent::CloseRequested { api, .. } if matches!(window.label(), "main" | "widget" | "notice") => {
                 api.prevent_close();
                 if let Some(w) = window.app_handle().get_webview_window(window.label()) {
                     conceal(&w);
@@ -682,6 +835,8 @@ pub fn run() {
             open_main,
             get_autostart,
             set_autostart,
+            get_notice,
+            present_notice,
             app_version
         ])
         .run(tauri::generate_context!())

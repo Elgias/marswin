@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MarsWin</title>
+  </head>
+  <body>
+    <div class="frame notice" id="notice" data-level="warning">
+      <svg class="notice-sign" viewBox="0 0 24 22" aria-hidden="true">
+        <path class="sign-body" d="M12 1.8L22.4 20.2H1.6z" />
+        <path class="sign-mark" d="M12 8.2v5.2M12 16.7v0.1" />
+      </svg>
+      <span class="notice-text" id="text"></span>
+      <button class="icon-btn" id="close" data-i18n-title="close">
+        <svg viewBox="2 2 12 12"><path d="M2.7 2.7l10.6 10.6M13.3 2.7L2.7 13.3" /></svg>
+      </button>
+    </div>
+    <script type="module" src="/src/notice.ts"></script>
+  </body>
+</html>

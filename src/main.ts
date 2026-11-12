@@ -5,7 +5,7 @@ import { api, fitZoom, onFade, onSettings, onSnapshot, onUpdate, toast, win, typ
 import { errorText, setLang, t, translatePage } from "./i18n";
 import { enter, leave, roll, seed, swap } from "./motion";
 import { PaceRing } from "./pace";
-import { barWidth, percent, statusOf, watts } from "./view";
+import { barWidth, percent, showStatus, statusOf, watts } from "./view";
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -23,8 +23,7 @@ function render(): void {
   $("energy").textContent = `${kwh(s.energyWh)} / ${kwh(s.ratedWh)} kWh`;
 
   const status = statusOf(s, !!settings?.device);
-  swap($("status"), status.text);
-  $("status").dataset.flow = status.flow;
+  showStatus($("status"), status);
   $("bar").dataset.flow = status.flow;
   // Without a link the last values are kept but dimmed.
   document.body.classList.toggle("stale", !s.online);

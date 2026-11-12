@@ -37,6 +37,12 @@ pub struct Settings {
     pub device: Option<DeviceRef>,
     /// Autostart is switched on once, on the first run; after that the tray menu and the settings switch own it.
     pub autostart_initialized: bool,
+    /// Charge level (%) for the warning notice, and whether it is shown.
+    pub warn_pct: u32,
+    pub warn_on: bool,
+    /// Charge level (%) for the critical notice, and whether it is shown.
+    pub critical_pct: u32,
+    pub critical_on: bool,
 }
 
 impl Default for Settings {
@@ -48,17 +54,25 @@ impl Default for Settings {
             timeout_sec: 5,
             device: None,
             autostart_initialized: false,
+            warn_pct: 50,
+            warn_on: true,
+            critical_pct: 20,
+            critical_on: true,
         }
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsPatch {
     pub lang: Option<String>,
     pub refresh_sec: Option<u32>,
     pub mode_check_sec: Option<u32>,
     pub timeout_sec: Option<u32>,
+    pub warn_pct: Option<u32>,
+    pub warn_on: Option<bool>,
+    pub critical_pct: Option<u32>,
+    pub critical_on: Option<bool>,
 }
 
 impl Settings {
@@ -94,6 +108,18 @@ impl Settings {
         if let Some(v) = patch.timeout_sec {
             self.timeout_sec = v;
         }
+        if let Some(v) = patch.warn_pct {
+            self.warn_pct = v;
+        }
+        if let Some(v) = patch.warn_on {
+            self.warn_on = v;
+        }
+        if let Some(v) = patch.critical_pct {
+            self.critical_pct = v;
+        }
+        if let Some(v) = patch.critical_on {
+            self.critical_on = v;
+        }
         *self = std::mem::take(self).sanitized();
     }
 
@@ -107,6 +133,8 @@ impl Settings {
         }
         self.mode_check_sec = self.mode_check_sec.clamp(5, 86400);
         self.timeout_sec = self.timeout_sec.clamp(1, 30);
+        self.warn_pct = self.warn_pct.clamp(1, 99);
+        self.critical_pct = self.critical_pct.clamp(1, 99);
         self
     }
 }
@@ -130,9 +158,23 @@ mod tests {
     fn auto_survives_sanitizing() {
         let mut s = Settings::default();
         assert_eq!(s.refresh_sec, AUTO);
-        s.apply(SettingsPatch { lang: None, refresh_sec: Some(1), mode_check_sec: None, timeout_sec: None });
+        s.apply(SettingsPatch { refresh_sec: Some(1), ..Default::default() });
         assert_eq!(s.refresh_sec, 2);
-        s.apply(SettingsPatch { lang: None, refresh_sec: Some(AUTO), mode_check_sec: None, timeout_sec: None });
+        s.apply(SettingsPatch { refresh_sec: Some(AUTO), ..Default::default() });
         assert_eq!(s.refresh_sec, AUTO);
+    }
+
+    #[test]
+    fn notice_levels_stay_in_range() {
+        let mut s = Settings::default();
+        assert_eq!((s.warn_pct, s.warn_on, s.critical_pct, s.critical_on), (50, true, 20, true));
+        s.apply(SettingsPatch { warn_pct: Some(0), critical_pct: Some(150), critical_on: Some(false), ..Default::default() });
+        assert_eq!((s.warn_pct, s.critical_pct, s.critical_on), (1, 99, false));
+    }
+
+    #[test]
+    fn old_settings_file_gets_notice_defaults() {
+        let s: Settings = serde_json::from_str(r#"{"lang":"en","refreshSec":0}"#).unwrap();
+        assert_eq!((s.warn_pct, s.warn_on, s.critical_pct, s.critical_on), (50, true, 20, true));
     }
 }

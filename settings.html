@@ -27,6 +27,29 @@
               <input type="checkbox" class="switch" id="autostart" role="switch" />
             </label>
           </div>
+
+          <h2 class="muted gap-section" data-i18n="notifications"></h2>
+          <!-- --i: the rows rise right after the five rows above. -->
+          <div class="rows" data-stagger style="--i: 5">
+            <div class="row">
+              <span data-i18n="warnLevel"></span>
+              <div class="level">
+                <input class="field level-pct" id="warn-pct" inputmode="numeric" maxlength="2" autocomplete="off" spellcheck="false" />
+                <button class="level-on" id="warn-on" type="button" role="switch" data-i18n-title="notifyToggle">
+                  <svg viewBox="0 0 16 16"><path d="M2.8 8.4l3.4 3.4L13.2 4.6" /></svg>
+                </button>
+              </div>
+            </div>
+            <div class="row">
+              <span data-i18n="criticalLevel"></span>
+              <div class="level">
+                <input class="field level-pct" id="critical-pct" inputmode="numeric" maxlength="2" autocomplete="off" spellcheck="false" />
+                <button class="level-on" id="critical-on" type="button" role="switch" data-i18n-title="notifyToggle">
+                  <svg viewBox="0 0 16 16"><path d="M2.8 8.4l3.4 3.4L13.2 4.6" /></svg>
+                </button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <section class="col right" data-stagger>

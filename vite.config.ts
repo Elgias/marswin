@@ -12,6 +12,7 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         settings: resolve(__dirname, "settings.html"),
         widget: resolve(__dirname, "widget.html"),
+        notice: resolve(__dirname, "notice.html"),
       },
     },
   },
