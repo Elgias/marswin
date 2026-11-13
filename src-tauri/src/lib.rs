@@ -9,7 +9,7 @@ use alerts::{Alerts, Notice};
 use serde::Serialize;
 use serde_json::{json, Value};
 use settings::{DeviceRef, Settings, SettingsPatch};
-use snapshot::{Drain, Flow, Snapshot};
+use snapshot::{Eta, Flow, Snapshot};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -125,23 +125,24 @@ fn tr(lang: &str, key: &str) -> &'static str {
     }
 }
 
-/// "Залишилось 8г 39хв" / "8h 39m left"; the same text as `statusOf` in view.ts.
-fn time_left(lang: &str, min: u32) -> String {
+/// "Залишилось 8г 39хв" / "8h 39m left" while discharging, "До повного 1г 15хв" /
+/// "1h 15m to full" while charging; the same text as `statusOf` in view.ts.
+fn eta_text(lang: &str, flow: Flow, min: u32) -> String {
     let (d, h, m) = (min / 1440, min % 1440 / 60, min % 60);
-    if lang == "en" {
-        let span = match min {
-            0..60 => format!("{m}m"),
-            60..1440 => format!("{h}h {m}m"),
-            _ => format!("{d}d {h}h"),
-        };
-        format!("{span} left")
-    } else {
-        let span = match min {
-            0..60 => format!("{m}хв"),
-            60..1440 => format!("{h}г {m}хв"),
-            _ => format!("{d}д {h}г"),
-        };
-        format!("Залишилось {span}")
+    let en = lang == "en";
+    let span = match (min, en) {
+        (0..60, true) => format!("{m}m"),
+        (60..1440, true) => format!("{h}h {m}m"),
+        (_, true) => format!("{d}d {h}h"),
+        (0..60, false) => format!("{m}хв"),
+        (60..1440, false) => format!("{h}г {m}хв"),
+        (_, false) => format!("{d}д {h}г"),
+    };
+    match (flow == Flow::Charging, en) {
+        (false, true) => format!("{span} left"),
+        (false, false) => format!("Залишилось {span}"),
+        (true, true) => format!("{span} to full"),
+        (true, false) => format!("До повного {span}"),
     }
 }
 
@@ -151,11 +152,11 @@ fn tooltip(lang: &str, snap: &Snapshot, has_device: bool) -> String {
     } else if !snap.online {
         tr(lang, "offline").to_string()
     } else {
-        let flow = match (snap.flow, snap.remaining_min) {
-            (Flow::Discharging, Some(min)) => time_left(lang, min),
-            (Flow::Discharging, None) => tr(lang, "discharging").to_string(),
-            (Flow::Charging, _) => tr(lang, "charging").to_string(),
+        let flow = match (snap.flow, snap.eta_min) {
             (Flow::Idle, _) => tr(lang, "idle").to_string(),
+            (flow, Some(min)) => eta_text(lang, flow, min),
+            (Flow::Discharging, None) => tr(lang, "discharging").to_string(),
+            (Flow::Charging, None) => tr(lang, "charging").to_string(),
         };
         match snap.soc {
             Some(soc) => format!("{soc:.0}% · {flow}"),
@@ -589,7 +590,7 @@ async fn poller(app: AppHandle) {
     let shared = app.state::<Shared>();
     let mut last_full: Option<Instant> = None;
     let mut last_mode = Value::Null;
-    let mut drain = Drain::default();
+    let mut eta = Eta::default();
     let mut alerts = Alerts::default();
     loop {
         let mut answer = None;
@@ -604,14 +605,14 @@ async fn poller(app: AppHandle) {
                 prev
             } else {
                 last_mode = Value::Null;
-                drain = Drain::default();
+                eta = Eta::default();
                 alerts = Alerts::default();
                 Snapshot::default()
             };
             let wait = Duration::from_secs(s.timeout_sec.into());
             let (mut snap, took) = poll_once(&dev, wait, full, prev, &mut last_mode).await;
-            // A missed answer keeps the count of discharge polls; the estimate comes back with the next answer.
-            snap.remaining_min = if snap.online { drain.update(&snap) } else { None };
+            // A missed answer keeps the count of polls; the estimate comes back with the next answer.
+            snap.eta_min = if snap.online { eta.update(&snap) } else { None };
             answer = took;
             if full && snap.online {
                 last_full = Some(Instant::now());
@@ -904,4 +905,18 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running MarsWin");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eta_text_names_the_direction() {
+        assert_eq!(eta_text("uk", Flow::Discharging, 519), "Залишилось 8г 39хв");
+        assert_eq!(eta_text("en", Flow::Discharging, 519), "8h 39m left");
+        assert_eq!(eta_text("uk", Flow::Charging, 75), "До повного 1г 15хв");
+        assert_eq!(eta_text("en", Flow::Charging, 45), "45m to full");
+        assert_eq!(eta_text("uk", Flow::Discharging, 1740), "Залишилось 1д 5г");
+    }
 }

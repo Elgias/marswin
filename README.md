@@ -9,9 +9,13 @@ A small Windows app that monitors a Marstek battery (Venus C/D/E, Venus E mini) 
 - Charge level, energy (kWh), input/output power, temperature, operating mode.
 - Device search on the local network (UDP broadcast), or manual IP and port.
 - Read-only: MarsWin shows data and never changes the device's mode.
-- Time left on battery: from the third poll in a row that discharges, "Discharging" changes to
-  "8h 39m left" (main window, widget, tray tooltip). Formula: remaining energy (Wh) ÷ mean
-  discharge power of the last 3–10 polls. Charge or idle starts the count again.
+- Time estimates (main window, widget, tray tooltip), from the third poll in a row in the same
+  direction:
+  - Discharging → "8h 39m left": remaining energy (Wh) ÷ mean discharge power of the last
+    3–10 polls.
+  - Charging → "1h 15m to full": (rated − remaining energy) (Wh) ÷ mean charge power of the
+    last 3–10 polls. Near 100 % the battery takes less power, so the time can grow at the end.
+  - A change of direction or idle starts the count again.
 - Low-charge notices: a one-line notice by the tray, "50% left" with a yellow sign (warning) or
   "20% left" with a red sign (critical). It hides after 5 s or on ×, and never takes focus.
   It plays the Windows "Low Battery Alarm" or "Critical Battery Alarm" sound from the user's
@@ -108,7 +112,8 @@ and a `latest.json` over local HTTP, and start MarsWin with `MARSWIN_UPDATE_URL`
 | % and kWh | `Bat.GetStatus` `soc`, `bat_capacity`, `rated_capacity` |
 | Input / Output | `ES.GetStatus` `ongrid_power` (< 0 means from the grid) plus `offgrid_power` |
 | Charging / Discharging | `bat_power` sign when present, otherwise `ongrid_power` |
-| Time left | energy (Wh) ÷ mean of −`bat_power` (else output − input) over the last 3–10 polls (`Drain` in `snapshot.rs`) |
+| Time left | energy (Wh) ÷ mean of −`bat_power` (else output − input) over the last 3–10 polls (`Eta` in `snapshot.rs`) |
+| Time to full | (`rated_capacity` − energy) (Wh) ÷ mean of `bat_power` (else input − output) over the last 3–10 polls (`Eta`) |
 | Temperature | `Bat.GetStatus` `bat_temp` |
 | Mode | `ES.GetMode` (read every "Mode check" interval) |
 | Connection | `Wifi.GetStatus`, `Marstek.GetDevice` |
@@ -130,8 +135,8 @@ and a `latest.json` over local HTTP, and start MarsWin with `MARSWIN_UPDATE_URL`
 - **Screen fit:** window size comes from `fit.rs` (0.72 of the design, at most 55 % of the
   work-area height). The page follows with CSS `zoom` (`fitZoom` in `api.ts`). Change the
   numbers there, not the CSS.
-- **Testing without a battery:** `npm run dev` gives mock data (`?lang=en`, `?remaining=none`,
-  and `notice.html?level=critical` show other states). For the full path, run a small UDP
+- **Testing without a battery:** `npm run dev` gives mock data (`?lang=en`, `?flow=charging`,
+  `?eta=none` and `notice.html?level=critical` show other states). For the full path, run a small UDP
   emulator on port 30002 **bound to `127.0.0.2`** and set the device to `127.0.0.2:30002`.
   MarsWin binds `0.0.0.0` on the device port; an emulator on `127.0.0.1` at that port gets the
   replies meant for MarsWin (the more specific bind wins), so every poll times out.

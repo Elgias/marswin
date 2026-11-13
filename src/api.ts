@@ -38,8 +38,9 @@ export interface Snapshot {
   tempC: number | null;
   mode: string | null;
   flow: Flow;
-  /** Minutes left at the present discharge rate; set from the 3rd discharge poll in a row (snapshot.rs, Drain). */
-  remainingMin: number | null;
+  /** Minutes to empty (discharging) or to full (charging) at the present rate; set from the
+   *  3rd poll in a row in the same direction (snapshot.rs, Eta). */
+  etaMin: number | null;
   wifi: { ssid: string | null; rssi: number | null; ip: string | null } | null;
 }
 
@@ -79,8 +80,9 @@ if (inTauri) {
   });
 }
 
-// Mock variants for the browser: ?lang=en, ?level=critical (notice.html), ?remaining=none.
+// Mock variants for the browser: ?lang=en, ?level=critical (notice.html), ?eta=none, ?flow=charging.
 const mockQuery = new URLSearchParams(location.search);
+const mockCharging = mockQuery.get("flow") === "charging";
 const mockDevice: DeviceRef = { ip: "192.168.1.101", port: 30000, name: "VNSEM-0", ver: 301 };
 let mockAutostart = true;
 let mockSettings: Settings = {
@@ -101,12 +103,12 @@ const mockSnapshot: Snapshot = {
   soc: 94.4,
   energyWh: 1888,
   ratedWh: 2000,
-  inputW: 0,
-  outputW: 129,
+  inputW: mockCharging ? 800 : 0,
+  outputW: mockCharging ? 0 : 129,
   tempC: 27,
   mode: "UPS",
-  flow: "discharging",
-  remainingMin: mockQuery.get("remaining") === "none" ? null : 519,
+  flow: mockCharging ? "charging" : "discharging",
+  etaMin: mockQuery.get("eta") === "none" ? null : mockCharging ? 8 : 519,
   wifi: { ssid: "MERQ", rssi: -31, ip: "192.168.1.101" },
 };
 const mockNotice: Notice =

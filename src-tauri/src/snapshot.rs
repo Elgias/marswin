@@ -8,10 +8,10 @@ use std::collections::VecDeque;
 /// Below this many watts the battery counts as idle (sensor noise).
 const IDLE_W: f64 = 5.0;
 
-/// Polls in a row of discharge before the time estimate shows.
-pub const DRAIN_MIN_POLLS: usize = 3;
+/// Polls in a row of charge (or discharge) before the time estimate shows.
+const ETA_MIN_POLLS: usize = 3;
 /// The estimate averages the power of at most this many latest polls.
-const DRAIN_MAX_POLLS: usize = 10;
+const ETA_MAX_POLLS: usize = 10;
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -44,8 +44,9 @@ pub struct Snapshot {
     pub temp_c: Option<f64>,
     pub mode: Option<String>,
     pub flow: Flow,
-    /// Minutes until the battery is empty at the present discharge rate (see `Drain`).
-    pub remaining_min: Option<u32>,
+    /// Minutes until the battery is empty (discharging) or full (charging) at the present
+    /// rate (see `Eta`).
+    pub eta_min: Option<u32>,
     pub wifi: Option<Wifi>,
     /// Battery power: + charge, - discharge.
     #[serde(skip)]
@@ -173,10 +174,14 @@ impl Snapshot {
         });
     }
 
-    /// Watts the battery gives out now; `None` unless it discharges.
-    fn drain_w(&self) -> Option<f64> {
-        let w = -self.bat_w?;
-        (self.flow == Flow::Discharging && w >= IDLE_W).then_some(w)
+    /// Watts that go into the battery (charging) or out of it (discharging); `None` when idle.
+    fn flow_w(&self) -> Option<f64> {
+        let w = match self.flow {
+            Flow::Charging => self.bat_w?,
+            Flow::Discharging => -self.bat_w?,
+            Flow::Idle => return None,
+        };
+        (w >= IDLE_W).then_some(w)
     }
 
     /// Marstek.GetDevice: refresh the model name and firmware version.
@@ -192,34 +197,45 @@ impl Snapshot {
     }
 }
 
-/// Time left on battery: remaining energy / mean discharge power of the latest polls.
+/// Time to empty (discharging) or to full (charging) at the mean power of the latest polls.
 ///
-/// minutes = energy_wh / mean(drain watts of the last 3..10 polls) * 60
+/// discharging: minutes = energy_wh / mean(watts out over the last 3..10 polls) * 60
+/// charging:    minutes = (rated_wh - energy_wh) / mean(watts in over the last 3..10 polls) * 60
 ///
-/// It shows from the third poll in a row that discharges; charge, idle or a new device
-/// starts the count again. Averaging over a few polls keeps short load spikes from making
-/// the estimate jump.
+/// It shows from the third poll in a row in the same direction; a change of direction, idle
+/// or a new device starts the count again. Averaging over a few polls keeps short load spikes
+/// from making the estimate jump. Near 100 % the battery takes less power, so the time to
+/// full can grow at the end.
 #[derive(Default)]
-pub struct Drain {
+pub struct Eta {
+    flow: Flow,
     watts: VecDeque<f64>,
 }
 
-impl Drain {
-    /// Feeds one answered poll; returns the minutes left once there are enough polls.
+impl Eta {
+    /// Feeds one answered poll; returns the minutes once there are enough polls.
     pub fn update(&mut self, snap: &Snapshot) -> Option<u32> {
-        let Some(w) = snap.drain_w() else {
+        let Some(w) = snap.flow_w() else {
             self.watts.clear();
             return None;
         };
-        if self.watts.len() == DRAIN_MAX_POLLS {
+        if snap.flow != self.flow {
+            self.watts.clear();
+            self.flow = snap.flow;
+        }
+        if self.watts.len() == ETA_MAX_POLLS {
             self.watts.pop_front();
         }
         self.watts.push_back(w);
-        if self.watts.len() < DRAIN_MIN_POLLS {
+        if self.watts.len() < ETA_MIN_POLLS {
             return None;
         }
         let mean = self.watts.iter().sum::<f64>() / self.watts.len() as f64;
-        snap.energy_wh.map(|wh| (wh.max(0.0) / mean * 60.0).round() as u32)
+        let wh = match snap.flow {
+            Flow::Charging => snap.rated_wh? - snap.energy_wh?,
+            _ => snap.energy_wh?,
+        };
+        (wh > 0.0).then(|| (wh / mean * 60.0).round() as u32)
     }
 }
 
@@ -279,14 +295,20 @@ mod tests {
     }
 
     fn discharging(wh: f64, watts: f64) -> Snapshot {
-        let mut s = Snapshot { energy_wh: Some(wh), ..Default::default() };
+        let mut s = Snapshot { energy_wh: Some(wh), rated_wh: Some(2000.0), ..Default::default() };
         s.apply_power(&json!({"ongrid_power": watts, "offgrid_power": 0}), &Value::Null);
+        s
+    }
+
+    fn charging(wh: f64, watts: f64) -> Snapshot {
+        let mut s = Snapshot { energy_wh: Some(wh), rated_wh: Some(2000.0), ..Default::default() };
+        s.apply_power(&json!({"ongrid_power": -watts, "offgrid_power": 0}), &Value::Null);
         s
     }
 
     #[test]
     fn drain_estimate_starts_on_the_third_poll() {
-        let mut d = Drain::default();
+        let mut d = Eta::default();
         assert_eq!(d.update(&discharging(1888.0, 129.0)), None);
         assert_eq!(d.update(&discharging(1888.0, 129.0)), None);
         // 1888 Wh / 129 W = 14.64 h = 878 min.
@@ -295,7 +317,7 @@ mod tests {
 
     #[test]
     fn drain_estimate_averages_the_power() {
-        let mut d = Drain::default();
+        let mut d = Eta::default();
         d.update(&discharging(1000.0, 100.0));
         d.update(&discharging(1000.0, 200.0));
         // Mean 200 W: 1000 Wh lasts 5 h.
@@ -309,21 +331,23 @@ mod tests {
 
     #[test]
     fn drain_estimate_restarts_after_charge_or_idle() {
-        let mut d = Drain::default();
+        let mut d = Eta::default();
         for _ in 0..3 {
             d.update(&discharging(1000.0, 100.0));
         }
-        let mut charging = Snapshot { energy_wh: Some(1000.0), ..Default::default() };
-        charging.apply_power(&json!({"ongrid_power": -800}), &Value::Null);
-        assert_eq!(d.update(&charging), None);
+        assert_eq!(d.update(&charging(1000.0, 800.0)), None);
         assert_eq!(d.update(&discharging(1000.0, 100.0)), None);
         assert_eq!(d.update(&discharging(1000.0, 100.0)), None);
         assert_eq!(d.update(&discharging(1000.0, 100.0)), Some(600));
+        let mut idle = discharging(1000.0, 0.0);
+        idle.apply_power(&json!({"ongrid_power": 0, "bat_power": 0}), &Value::Null);
+        assert_eq!(d.update(&idle), None);
+        assert_eq!(d.update(&discharging(1000.0, 100.0)), None);
     }
 
     #[test]
     fn drain_uses_battery_power_when_reported() {
-        let mut d = Drain::default();
+        let mut d = Eta::default();
         let snap = || {
             let mut s = Snapshot { energy_wh: Some(1000.0), ..Default::default() };
             // 129 W at the socket, 150 W out of the battery (inverter losses).
@@ -333,6 +357,56 @@ mod tests {
         d.update(&snap());
         d.update(&snap());
         assert_eq!(d.update(&snap()), Some(400));
+    }
+
+    #[test]
+    fn charge_estimate_is_time_to_full() {
+        let mut e = Eta::default();
+        assert_eq!(e.update(&charging(1000.0, 800.0)), None);
+        assert_eq!(e.update(&charging(1000.0, 800.0)), None);
+        // 1000 Wh missing at 800 W = 1.25 h = 75 min.
+        assert_eq!(e.update(&charging(1000.0, 800.0)), Some(75));
+    }
+
+    #[test]
+    fn charge_estimate_restarts_after_discharge() {
+        let mut e = Eta::default();
+        for _ in 0..3 {
+            e.update(&charging(1000.0, 800.0));
+        }
+        assert_eq!(e.update(&discharging(1000.0, 100.0)), None);
+        assert_eq!(e.update(&charging(1000.0, 800.0)), None);
+        assert_eq!(e.update(&charging(1000.0, 800.0)), None);
+        assert_eq!(e.update(&charging(1000.0, 800.0)), Some(75));
+    }
+
+    #[test]
+    fn charge_estimate_uses_battery_power_when_reported() {
+        let mut e = Eta::default();
+        let snap = || {
+            let mut s = Snapshot { energy_wh: Some(1500.0), rated_wh: Some(2000.0), ..Default::default() };
+            // 800 W from the grid, 600 W into the battery (charger losses).
+            s.apply_power(&json!({"ongrid_power": -800, "bat_power": 600}), &Value::Null);
+            s
+        };
+        e.update(&snap());
+        e.update(&snap());
+        assert_eq!(e.update(&snap()), Some(50));
+    }
+
+    #[test]
+    fn no_estimate_when_full_empty_or_capacity_unknown() {
+        let mut e = Eta::default();
+        for _ in 0..3 {
+            assert_eq!(e.update(&charging(2000.0, 50.0)), None);
+        }
+        let mut unknown = charging(1000.0, 800.0);
+        unknown.rated_wh = None;
+        assert_eq!(e.update(&unknown), None);
+        let mut d = Eta::default();
+        for _ in 0..3 {
+            assert_eq!(d.update(&discharging(0.0, 100.0)), None);
+        }
     }
 
     #[test]

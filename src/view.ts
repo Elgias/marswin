@@ -18,26 +18,28 @@ export interface Status {
   text: string;
   /** Colour key (data-flow). */
   flow: string;
-  /** True when the text is the time left, which changes with every poll. */
+  /** True when the text is a time estimate, which changes with every poll. */
   estimate: boolean;
 }
 
 /** Status line text and its colour key, shared by the window and the widget.
- *  While discharging, the time left replaces "Discharging" once Rust has an estimate. */
+ *  Once Rust has an estimate, the time left replaces "Discharging" and the time to full
+ *  replaces "Charging". */
 export function statusOf(s: Snapshot, hasDevice: boolean): Status {
   const plain = (text: string, flow: string) => ({ text, flow, estimate: false });
   if (!hasDevice) return plain(t("noDevice"), "none");
   if (!s.online) return s.error ? plain(t("offline"), "offline") : plain(t("connecting"), "none");
-  if (s.flow === "discharging" && s.remainingMin != null) {
-    return { text: t("timeLeft", { t: span(s.remainingMin) }), flow: s.flow, estimate: true };
+  if (s.flow !== "idle" && s.etaMin != null) {
+    const key = s.flow === "charging" ? "timeToFull" : "timeLeft";
+    return { text: t(key, { t: span(s.etaMin) }), flow: s.flow, estimate: true };
   }
   return plain(t(s.flow), s.flow);
 }
 
 /** Puts the status into `el`. A new status fades in; a new figure of the same estimate just changes. */
 export function showStatus(el: HTMLElement, status: Status): void {
-  if (status.estimate && el.dataset.estimate === "1") el.textContent = status.text;
+  if (status.estimate && el.dataset.estimate === status.flow) el.textContent = status.text;
   else swap(el, status.text);
   el.dataset.flow = status.flow;
-  el.dataset.estimate = status.estimate ? "1" : "";
+  el.dataset.estimate = status.estimate ? status.flow : "";
 }
