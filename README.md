@@ -14,6 +14,8 @@ A small Windows app that monitors a Marstek battery (Venus C/D/E, Venus E mini) 
   discharge power of the last 3–10 polls. Charge or idle starts the count again.
 - Low-charge notices: a one-line notice by the tray, "50% left" with a yellow sign (warning) or
   "20% left" with a red sign (critical). It hides after 5 s or on ×, and never takes focus.
+  It plays the Windows "Low Battery Alarm" or "Critical Battery Alarm" sound from the user's
+  sound scheme (Control Panel → Sound → Sounds; no sound there means a silent notice).
   Each level shows once per discharge; it fires again after the charge rises 2 points above
   it. Levels and on/off are in Settings → Notifications (default 50 % and 20 %, both on).
 - Adaptive refresh (default "Auto", after marstip): the next poll waits 3 s when the device
@@ -137,9 +139,14 @@ and a `latest.json` over local HTTP, and start MarsWin with `MARSWIN_UPDATE_URL`
   "Windows Security" firewall prompt. While it is open, a full-screen dim layer
   (`Shell_SystemDim`) takes every click, so simulated clicks on any window do nothing.
   Answer the prompt before click tests.
-- **Notice without focus:** the notice window is built with `focusable(false)`
-  (`WS_EX_NOACTIVATE`). tao's `focused(false)` acts only at creation; a later `show()` would
-  take focus from the app the user works in.
+- **Notice without focus:** the notice is shown and hidden with Win32 `ShowWindow`
+  (`SW_SHOWNOACTIVATE` / `SW_HIDE`, `set_notice_shown` in `lib.rs`), never with tao's
+  `show()` / `hide()`. tao's `show()` on a hidden window calls `SW_SHOW`, which activates it,
+  and `focused(false)` acts only at creation. tao therefore always thinks the notice is hidden,
+  so its `hide()` does nothing (no flag change, early return); `set_position` / `set_size`
+  still work. `focusable(false)` (`WS_EX_NOACTIVATE`) keeps a click on × from activating it.
+  **Test focus with another MarsWin window active:** when a different app is in front,
+  the Windows foreground lock stops the activation and hides the bug.
 - **Screenshots of the real window:** a PowerShell capture must be per-monitor DPI aware, or
   it gets scaled coordinates and crops the window.
 - **Key order in requests:** `serde_json` sorts object keys unless the `preserve_order` feature

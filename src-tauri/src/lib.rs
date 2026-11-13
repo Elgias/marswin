@@ -130,15 +130,15 @@ fn time_left(lang: &str, min: u32) -> String {
     let (d, h, m) = (min / 1440, min % 1440 / 60, min % 60);
     if lang == "en" {
         let span = match min {
-            ..60 => format!("{m}m"),
-            ..1440 => format!("{h}h {m}m"),
+            0..60 => format!("{m}m"),
+            60..1440 => format!("{h}h {m}m"),
             _ => format!("{d}d {h}h"),
         };
         format!("{span} left")
     } else {
         let span = match min {
-            ..60 => format!("{m}хв"),
-            ..1440 => format!("{h}г {m}хв"),
+            0..60 => format!("{m}хв"),
+            60..1440 => format!("{h}г {m}хв"),
             _ => format!("{d}д {h}г"),
         };
         format!("Залишилось {span}")
@@ -305,7 +305,12 @@ fn conceal(win: &WebviewWindow) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(FADE_OUT).await;
         if FADES.lock().unwrap().get(win.label()).is_some_and(|f| f.0 == id) {
-            let _ = win.hide();
+            if win.label() == "notice" {
+                let notice = win.clone();
+                let _ = win.run_on_main_thread(move || set_notice_shown(&notice, false));
+            } else {
+                let _ = win.hide();
+            }
         }
     });
 }
@@ -393,6 +398,61 @@ fn dock(app: &AppHandle, win: &WebviewWindow, at: PhysicalPosition<f64>) -> Opti
 }
 
 // ---------------------------------------------------------------- low-charge notice
+
+/// The Win32 calls the notice needs that Tauri does not offer.
+#[cfg(windows)]
+mod win32 {
+    use std::ffi::c_void;
+
+    pub const SW_HIDE: i32 = 0;
+    pub const SW_SHOWNOACTIVATE: i32 = 4;
+    pub const SND_ASYNC: u32 = 0x0001;
+    pub const SND_NODEFAULT: u32 = 0x0002;
+    pub const SND_ALIAS: u32 = 0x0001_0000;
+
+    #[link(name = "user32")]
+    extern "system" {
+        pub fn ShowWindow(hwnd: *mut c_void, cmd: i32) -> i32;
+    }
+
+    #[link(name = "winmm")]
+    extern "system" {
+        pub fn PlaySoundW(sound: *const u16, module: *mut c_void, flags: u32) -> i32;
+    }
+}
+
+/// Shows (SW_SHOWNOACTIVATE) or hides (SW_HIDE) the notice with Win32, never with tao.
+/// tao's show() on a window it thinks is hidden clears WS_VISIBLE and calls SW_SHOW, which
+/// activates the window and takes the keyboard (seen when another MarsWin window was
+/// active). So tao always thinks the notice is hidden. Then its hide() does nothing (no
+/// flag change, early return), hence SW_HIDE here; its set_position / set_size still work.
+fn set_notice_shown(win: &WebviewWindow, shown: bool) {
+    #[cfg(windows)]
+    if let Ok(hwnd) = win.hwnd() {
+        let cmd = if shown { win32::SW_SHOWNOACTIVATE } else { win32::SW_HIDE };
+        unsafe { win32::ShowWindow(hwnd.0, cmd) };
+        return;
+    }
+    let _ = if shown { win.show() } else { win.hide() };
+}
+
+/// Plays the Windows sound for this level from the user's sound scheme (Control Panel →
+/// Sound → Sounds): "Low Battery Alarm" or "Critical Battery Alarm". Silent when the
+/// scheme has no sound for it.
+fn chime(level: alerts::Level) {
+    #[cfg(windows)]
+    {
+        let alias = match level {
+            alerts::Level::Warning => "LowBatteryAlarm",
+            alerts::Level::Critical => "CriticalBatteryAlarm",
+        };
+        let wide: Vec<u16> = alias.encode_utf16().chain(Some(0)).collect();
+        let flags = win32::SND_ALIAS | win32::SND_ASYNC | win32::SND_NODEFAULT;
+        unsafe { win32::PlaySoundW(wide.as_ptr(), std::ptr::null_mut(), flags) };
+    }
+    #[cfg(not(windows))]
+    let _ = level;
+}
 
 /// Centre of the tray icon; without one, the far corner of the primary work area.
 fn tray_point(app: &AppHandle) -> Option<PhysicalPosition<f64>> {
@@ -688,13 +748,16 @@ fn get_notice(shared: State<'_, Shared>) -> Option<Notice> {
     shared.notice.lock().unwrap().clone()
 }
 
-/// The notice page has drawn a notice: place it, show it without taking focus,
-/// and hide it after NOTICE_FOR unless it was closed or replaced by then.
+/// The notice page has drawn a notice: place it, show it without taking focus, play its
+/// sound, and hide it after NOTICE_FOR unless it was closed or replaced by then.
 #[tauri::command]
-fn present_notice(app: AppHandle, window: WebviewWindow) {
+fn present_notice(app: AppHandle, shared: State<'_, Shared>, window: WebviewWindow) {
     place_notice(&app, &window);
     let id = fade_step(&window, false);
-    let _ = window.show();
+    set_notice_shown(&window, true);
+    if let Some(n) = shared.notice.lock().unwrap().as_ref() {
+        chime(n.level);
+    }
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(NOTICE_FOR).await;
         if FADES.lock().unwrap().get(window.label()).is_some_and(|f| f.0 == id) {
